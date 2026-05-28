@@ -17,7 +17,22 @@ streamlit run demo_app.py
 
 浏览器打开 `http://localhost:8501`。
 
+## 安装依赖
+
+```bash
+pip install streamlit requests openpyxl python-dotenv
+```
+
 ## 环境配置
+
+从 [钉钉开放平台](https://open-dev.dingtalk.com/) 获取以下配置：
+
+| 配置项 | 获取路径 | 说明 |
+|--------|----------|------|
+| `DINGTALK_APP_KEY` | 应用开发 → 企业内部应用 → 应用信息 → AppKey | 应用的唯一标识 |
+| `DINGTALK_APP_SECRET` | 应用开发 → 企业内部应用 → 应用信息 → AppSecret | 应用的密钥 |
+| `DINGTALK_AGENT_ID` | 应用开发 → 企业内部应用 → 应用信息 → AgentId | 钉钉微应用编号 |
+| `DINGTALK_PROCESS_CODE` | 钉钉管理后台 → OA审批 → 审批流程 → 流程编码 | OA 审批流程的唯一码 |
 
 创建 `.env` 文件：
 
@@ -27,6 +42,14 @@ DINGTALK_APP_SECRET=YOUR_APP_SECRET
 DINGTALK_AGENT_ID=YOUR_AGENT_ID
 DINGTALK_PROCESS_CODE=YOUR_PROCESS_CODE
 ```
+
+## 常见问题
+
+**登录报 400 错误**
+
+1. 确认 `.env` 文件存在于项目根目录（与 `demo_app.py` 同级）
+2. 确认 streamlit 从项目根目录启动：`streamlit run demo_app.py`（不是从子目录启动）
+3. 重启 streamlit（配置加载只在启动时读取）
 
 ## 已验证的 API 链路
 
