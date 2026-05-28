@@ -38,7 +38,7 @@ class DingTalkClient:
         resp = requests.post(
             "https://api.dingtalk.com/v1.0/oauth2/accessToken",
             json={"appKey": self.app_key, "appSecret": self.app_secret},
-            timeout=10,
+            timeout=30,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -49,7 +49,7 @@ class DingTalkClient:
         resp = requests.get(
             "https://oapi.dingtalk.com/gettoken",
             params={"appkey": self.app_key, "appsecret": self.app_secret},
-            timeout=10,
+            timeout=30,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -64,7 +64,7 @@ class DingTalkClient:
         resp = requests.post(
             f"https://oapi.dingtalk.com/topapi/v2/user/getbymobile?access_token={self.old_token}",
             json={"mobile": mobile},
-            timeout=10,
+            timeout=30,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -78,7 +78,7 @@ class DingTalkClient:
         resp = requests.post(
             f"https://oapi.dingtalk.com/topapi/v2/user/get?access_token={self.old_token}",
             json={"userid": user_id, "language": "zh_CN"},
-            timeout=10,
+            timeout=30,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -103,7 +103,7 @@ class DingTalkClient:
                 "Content-Type": "application/json",
             },
             json={"userId": user_id, "agentId": self.agent_id},
-            timeout=10,
+            timeout=30,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -135,7 +135,7 @@ class DingTalkClient:
                     },
                 },
             },
-            timeout=10,
+            timeout=30,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -169,7 +169,7 @@ class DingTalkClient:
                     "conflictStrategy": "AUTO_RENAME",
                 },
             },
-            timeout=10,
+            timeout=30,
         )
         resp.raise_for_status()
         dentry = resp.json()["dentry"]
@@ -414,6 +414,12 @@ def main():
 
     # Section 2: File Upload
     st.subheader(f"欢迎，{st.session_state.user_name}")
+    col1, col2 = st.columns([1, 1])
+    with col2:
+        if st.button("退出登录"):
+            for key in ["logged_in", "user_id", "union_id", "dept_id", "user_name"]:
+                st.session_state.pop(key, None)
+            st.rerun()
     uploaded_files = st.file_uploader(
         "上传工资表", type=["xlsx"], accept_multiple_files=True
     )
