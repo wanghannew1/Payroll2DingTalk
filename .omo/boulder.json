@@ -1,0 +1,85 @@
+{
+  "schema_version": 2,
+  "active_work_id": "demo-app-f532cc64",
+  "works": {
+    "demo-app-f532cc64": {
+      "work_id": "demo-app-f532cc64",
+      "active_plan": "/home/ubuntu/coding/Payroll2DingTalk/.omo/plans/demo-app.md",
+      "plan_name": "demo-app",
+      "status": "completed",
+      "started_at": "2026-05-28T06:37:16.254Z",
+      "updated_at": "2026-05-28T06:59:05.869Z",
+      "session_ids": [
+        "ses_19735d85affetAnbx64FmwBitr"
+      ],
+      "session_origins": {
+        "ses_19735d85affetAnbx64FmwBitr": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {
+        "todo:1": {
+          "task_key": "todo:1",
+          "task_label": "1",
+          "task_title": "基础架构：config + DingTalkClient 类 + Streamlit 页面框架",
+          "session_id": "ses_192ad2c8fffebP13xprTJCMsxe",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "updated_at": "2026-05-28T06:52:37.683Z",
+          "started_at": "2026-05-28T06:52:37.683Z",
+          "status": "running"
+        },
+        "final-wave:f1": {
+          "task_key": "final-wave:f1",
+          "task_label": "F1",
+          "task_title": "**Plan Compliance Audit** — `oracle`",
+          "session_id": "ses_192a189eaffeNQ74yRFunzsxAf",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "updated_at": "2026-05-28T06:56:54.191Z",
+          "started_at": "2026-05-28T06:56:54.191Z",
+          "status": "running"
+        }
+      },
+      "ended_at": "2026-05-28T06:59:05.869Z",
+      "elapsed_ms": 1309615
+    }
+  },
+  "active_plan": "/home/ubuntu/coding/Payroll2DingTalk/.omo/plans/demo-app.md",
+  "started_at": "2026-05-28T06:37:16.254Z",
+  "status": "completed",
+  "updated_at": "2026-05-28T06:59:05.869Z",
+  "session_ids": [
+    "ses_19735d85affetAnbx64FmwBitr"
+  ],
+  "session_origins": {
+    "ses_19735d85affetAnbx64FmwBitr": "direct"
+  },
+  "plan_name": "demo-app",
+  "task_sessions": {
+    "todo:1": {
+      "task_key": "todo:1",
+      "task_label": "1",
+      "task_title": "基础架构：config + DingTalkClient 类 + Streamlit 页面框架",
+      "session_id": "ses_192ad2c8fffebP13xprTJCMsxe",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-05-28T06:52:37.683Z",
+      "started_at": "2026-05-28T06:52:37.683Z",
+      "status": "running"
+    },
+    "final-wave:f1": {
+      "task_key": "final-wave:f1",
+      "task_label": "F1",
+      "task_title": "**Plan Compliance Audit** — `oracle`",
+      "session_id": "ses_192a189eaffeNQ74yRFunzsxAf",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-05-28T06:56:54.191Z",
+      "started_at": "2026-05-28T06:56:54.191Z",
+      "status": "running"
+    }
+  },
+  "agent": "atlas",
+  "ended_at": "2026-05-28T06:59:05.869Z",
+  "elapsed_ms": 1309615
+}

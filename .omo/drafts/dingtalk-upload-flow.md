@@ -512,8 +512,8 @@ def full_approval_flow(phone_mobile, file_paths, title):
     完整流程：手机号登录 → 上传文件 → 创建审批
     """
     # ──── Step 0: 准备 ────
-    app_key = 'YOUR_APP_KEY'
-    app_secret = 'YOUR_APP_SECRET'
+app_key = 'YOUR_APP_KEY'
+app_secret = 'YOUR_APP_SECRET'
     process_code = 'YOUR_PROCESS_CODE'
 
     # ──── 获取新版 Token ────
@@ -549,7 +549,7 @@ def full_approval_flow(phone_mobile, file_paths, title):
             'x-acs-dingtalk-access-token': new_token,
             'Content-Type': 'application/json'
         },
-        json={'userId': user_id, 'agentId': YOUR_AGENT_ID}
+        json={'userId': user_id, 'agentId': int(os.getenv('DINGTALK_AGENT_ID'))}
     )
     space_id = str(resp.json()['result']['spaceId'])
 
