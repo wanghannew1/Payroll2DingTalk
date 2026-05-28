@@ -1,0 +1,4 @@
+requests
+openpyxl
+streamlit
+python-dotenv
