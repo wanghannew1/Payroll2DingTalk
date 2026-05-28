@@ -43,6 +43,40 @@ DINGTALK_AGENT_ID=YOUR_AGENT_ID
 DINGTALK_PROCESS_CODE=YOUR_PROCESS_CODE
 ```
 
+## 钉钉权限配置
+
+在 [钉钉开放平台](https://open-dev.dingtalk.com/) → 应用开发 → 企业内部应用 → 权限管理 中，必须开通以下权限：
+
+### 必须开通（核心功能依赖）
+
+| 权限点 | 用途 | 对应 API |
+|--------|------|----------|
+| `qyapi_base` | 获取 Access Token | `oauth2/accessToken`、`gettoken` |
+| `qyapi_get_member_by_mobile` | 手机号查 userId | `topapi/v2/user/getbymobile` |
+| `qyapi_get_member` | 查用户详情（unionId、deptId） | `topapi/v2/user/get` |
+| `Workflow.Instance.Write` | 创建审批实例、授权上传空间 | `processInstances`、`spaces/infos/query` |
+| `Storage.UploadInfo.Read` | 获取 OSS 上传凭证 | `uploadInfos/query` |
+| `Storage.File.Write` | 提交文件上传确认 | `commit` |
+
+### 建议保留（方便后续扩展）
+
+| 权限点 | 用途 |
+|--------|------|
+| `Contact.User.Read` | 扩展通讯录功能 |
+| `Workflow.Form.Read` | 动态获取审批模板字段 |
+| `Workflow.Instance.Read` | 查询已提交审批单状态 |
+| `Storage.File.Read` | 读取已上传的文件 |
+
+### 不需要开通（本项目未使用）
+
+| 权限点 | 说明 |
+|--------|------|
+| `Drive.Space.Read` / `Drive.Space.Write` / `Drive.SpaceManage.Read` | 钉盘 API，本项目使用 Storage API |
+| `Storage.DownloadInfo.Read` | 下载文件用，本项目只上传 |
+| `snsapi_base` | 网页 OAuth 授权，后端调用不需要 |
+
+> **注意**：上传附件使用的是 **Storage API**（`Storage.UploadInfo.Read` + `Storage.File.Write`），不是 Drive API。如果开通 Drive 权限但文件上传仍然失败，请检查是否调用了正确的 Storage 接口。
+
 ## 常见问题
 
 **登录报 400 错误**
