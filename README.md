@@ -166,6 +166,61 @@ DINGTALK_PROCESS_CODE=YOUR_PROCESS_CODE
 
 > **注意**：上传附件使用的是 **Storage API**（`Storage.UploadInfo.Read` + `Storage.File.Write`），不是 Drive API。如果开通 Drive 权限但文件上传仍然失败，请检查是否调用了正确的 Storage 接口。
 
+## 生产环境补充配置
+
+### 防火墙放行
+
+如果服务器启用了防火墙，需开放 8501 端口：
+
+```bash
+sudo ufw allow 8501/tcp
+sudo ufw reload
+```
+
+### Nginx 反向代理（可选）
+
+如需通过域名访问，可配置 Nginx：
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8501;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+### 日志轮转
+
+避免日志文件无限增长：
+
+```bash
+sudo nano /etc/logrotate.d/streamlit-payroll
+```
+
+写入：
+
+```
+/home/vod/code/Payroll2DingTalk/*.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 vod vod
+}
+```
+
 ## 常见问题
 
 **登录报 400 错误**
@@ -173,6 +228,12 @@ DINGTALK_PROCESS_CODE=YOUR_PROCESS_CODE
 1. 确认 `.env` 文件存在于项目根目录（与 `demo_app.py` 同级）
 2. 确认 streamlit 从项目根目录启动：`streamlit run demo_app.py`（不是从子目录启动）
 3. 重启 streamlit（配置加载只在启动时读取）
+
+**服务启动失败**
+
+1. 检查 `.env` 文件权限：`ls -la .env`
+2. 检查日志：`sudo tail -f /home/vod/code/Payroll2DingTalk/streamlit-error.log`
+3. 确认虚拟环境路径正确：`which streamlit` 应显示 `.venv/bin/streamlit`
 
 ## 已验证的 API 链路
 
