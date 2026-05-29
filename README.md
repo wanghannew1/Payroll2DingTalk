@@ -8,19 +8,108 @@
 
 用户通过手机号登录 → 上传多个 Excel 工资表 → 预览解析数据 → 一键提交钉钉 OA 审批流程。
 
-## 运行
+## 快速开始
+
+### 1. 克隆仓库
 
 ```bash
-cd /home/ubuntu/coding/Payroll2DingTalk
+git clone https://github.com/wanghannew1/Payroll2DingTalk.git
+cd Payroll2DingTalk
+```
+
+### 2. 创建虚拟环境（推荐 uv）
+
+```bash
+# 使用 uv 创建虚拟环境（需先安装 uv）
+uv venv
+
+# 激活虚拟环境
+source .venv/bin/activate
+```
+
+> 如果没有 uv，可以用 `python -m venv .venv` 代替。
+
+### 3. 安装依赖
+
+```bash
+# 国内用户可使用清华镜像加速
+uv pip install -r requirements.txt
+
+# 或指定镜像源
+uv pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+### 4. 配置环境变量
+
+创建 `.env` 文件（见下方【环境配置】章节）。
+
+### 5. 启动服务
+
+**方式一：手动启动（开发调试）**
+
+```bash
 streamlit run demo_app.py
 ```
 
 浏览器打开 `http://localhost:8501`。
 
-## 安装依赖
+**方式二：Systemd 服务（生产环境，开机自启）**
+
+创建服务文件：
 
 ```bash
-pip install streamlit requests openpyxl python-dotenv
+sudo nano /etc/systemd/system/streamlit-payroll.service
+```
+
+写入以下内容（注意替换路径）：
+
+```ini
+[Unit]
+Description=Streamlit Payroll2DingTalk App
+After=network.target
+
+[Service]
+Type=simple
+User=vod
+WorkingDirectory=/home/vod/code/Payroll2DingTalk
+
+# 使用虚拟环境的绝对路径
+ExecStart=/home/vod/code/Payroll2DingTalk/.venv/bin/streamlit run /home/vod/code/Payroll2DingTalk/demo_app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
+
+# 自动重启配置
+Restart=always
+RestartSec=10
+
+# 日志输出
+StandardOutput=append:/home/vod/code/Payroll2DingTalk/streamlit.log
+StandardError=append:/home/vod/code/Payroll2DingTalk/streamlit-error.log
+
+[Install]
+WantedBy=multi-user.target
+```
+
+启用并启动服务：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable streamlit-payroll
+sudo systemctl start streamlit-payroll
+
+# 查看状态
+sudo systemctl status streamlit-payroll
+```
+
+**常用命令：**
+
+```bash
+# 查看日志
+sudo tail -f /home/vod/code/Payroll2DingTalk/streamlit.log
+
+# 重启服务
+sudo systemctl restart streamlit-payroll
+
+# 停止服务
+sudo systemctl stop streamlit-payroll
 ```
 
 ## 环境配置
