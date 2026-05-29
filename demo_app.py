@@ -17,6 +17,53 @@ APP_SECRET = os.getenv("DINGTALK_APP_SECRET", "")
 AGENT_ID = int(os.getenv("DINGTALK_AGENT_ID", "0") or "0")
 PROCESS_CODE = os.getenv("DINGTALK_PROCESS_CODE", "")
 
+DEFAULT_CONFIG = {
+    "excel": {
+        "summary_row_marker": "合计",
+        "unit_name_patterns": [
+            r"(?:单位名称[：:]|[名称][：:]\s*)(.+?)(?:\s|$)"
+        ],
+        "columns": {
+            "transfer_total": {
+                "keywords": ["转账合计"],
+                "label": "转账合计（元）"
+            },
+            "deduction_total": {
+                "keywords": ["扣款合计", "扣款"],
+                "label": "扣款合计（五险一金、单位代理费）"
+            },
+            "net_total": {
+                "keywords": ["实发合计", "实发工资", "实发"],
+                "label": "实发合计（元）"
+            }
+        }
+    },
+    "table_field": {
+        "columns": [
+            {"key": "report_name", "label": "报表名称"},
+            {"key": "unit_name", "label": "甲方单位项目名称"},
+            {"key": "transfer_total", "label": "转账合计（元）"},
+            {"key": "deduction_total", "label": "扣款合计（五险一金、单位代理费）"},
+            {"key": "net_total", "label": "实发合计（元）"},
+            {"key": "tax_and_others", "label": "个人所得税及其他"}
+        ]
+    }
+}
+
+
+def load_config():
+    config_path = os.path.join(os.path.dirname(__file__), "config.json")
+    if not os.path.exists(config_path):
+        return DEFAULT_CONFIG
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return DEFAULT_CONFIG
+
+
+CONFIG = load_config()
+
 
 class DingTalkClient:
     def __init__(self, app_key, app_secret, agent_id, process_code):
@@ -257,10 +304,15 @@ def parse_excel(file_bytes, filename):
         row2_text = " ".join(
             str(cell).strip() for cell in rows[1] if cell is not None
         )
-        m = re.search(r"(?:单位名称[：:]|[名称][：:]\s*)(.+?)(?:\s|$)", row2_text)
-        if m:
-            unit_name = m.group(1).strip()
-        else:
+        patterns = CONFIG["excel"].get("unit_name_patterns", DEFAULT_CONFIG["excel"]["unit_name_patterns"])
+        matched = False
+        for pattern in patterns:
+            m = re.search(pattern, row2_text)
+            if m:
+                unit_name = m.group(1).strip()
+                matched = True
+                break
+        if not matched:
             # Fallback: use first non-empty cell in row 2
             for cell in rows[1]:
                 if cell is not None and str(cell).strip():
@@ -277,10 +329,10 @@ def parse_excel(file_bytes, filename):
     if m:
         year_month = m.group(1)
 
-    # Find summary row (first column == "合计")
+    summary_marker = CONFIG["excel"].get("summary_row_marker", "合计")
     summary_row = None
     for row in rows:
-        if row and str(row[0]).strip() == "合计":
+        if row and str(row[0]).strip() == summary_marker:
             summary_row = row
             break
 
@@ -313,15 +365,16 @@ def parse_excel(file_bytes, filename):
                         return cidx
         return -1
 
-    transfer_idx = find_col_index(["转账合计"])
-    deduction_idx = find_col_index(["扣款合计", "扣款"])
+    excel_cols = CONFIG["excel"]["columns"]
+    transfer_idx = find_col_index(excel_cols["transfer_total"]["keywords"])
+    deduction_idx = find_col_index(excel_cols["deduction_total"]["keywords"])
 
-    # Prefer 实发合计 over 实发工资
-    net_idx = find_col_index(["实发合计"])
-    if net_idx == -1:
-        net_idx = find_col_index(["实发工资"])
-    if net_idx == -1:
-        net_idx = find_col_index(["实发"])
+    net_keywords = excel_cols["net_total"]["keywords"]
+    net_idx = -1
+    for kw in net_keywords:
+        net_idx = find_col_index([kw])
+        if net_idx != -1:
+            break
 
     def get_val(idx):
         if idx >= 0 and idx < len(summary_row):
@@ -444,19 +497,12 @@ def main():
     # Preview table
     st.subheader("数据预览")
     preview_data = []
+    tf_columns = CONFIG["table_field"]["columns"]
     for p in parsed_list:
-        preview_data.append(
-            {
-                "文件名": p["filename"],
-                "报表名称": p["report_name"],
-                "单位名称": p["unit_name"],
-                "年月": p["year_month"],
-                "转账合计": p["transfer_total"],
-                "扣款合计": p["deduction_total"],
-                "实发合计": p["net_total"],
-                "个人所得税及其他": p["tax_and_others"],
-            }
-        )
+        row = {"文件名": p["filename"], "年月": p["year_month"]}
+        for col in tf_columns:
+            row[col["label"]] = p[col["key"]]
+        preview_data.append(row)
     st.dataframe(preview_data)
 
     # Generate title
@@ -499,15 +545,12 @@ def main():
 
             # Build table rows
             table_rows = []
+            tf_columns = CONFIG["table_field"]["columns"]
             for p in parsed_list:
                 table_rows.append(
                     [
-                        {"name": "报表名称", "value": p["report_name"]},
-                        {"name": "甲方单位项目名称", "value": p["unit_name"]},
-                        {"name": "转账合计（元）", "value": p["transfer_total"]},
-                        {"name": "扣款合计（五险一金、单位代理费）", "value": p["deduction_total"]},
-                        {"name": "实发合计（元）", "value": p["net_total"]},
-                        {"name": "个人所得税及其他", "value": p["tax_and_others"]},
+                        {"name": col["label"], "value": p[col["key"]]}
+                        for col in tf_columns
                     ]
                 )
 

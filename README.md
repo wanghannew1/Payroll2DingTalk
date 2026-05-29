@@ -221,6 +221,69 @@ sudo nano /etc/logrotate.d/streamlit-payroll
 }
 ```
 
+## 配置文件（可选）
+
+项目支持通过 `config.json` 自定义 Excel 解析规则和钉钉审批表格字段，无需修改代码即可适配不同的 Excel 模板或 OA 表单。
+
+### 配置文件用途
+
+- **Excel 列名映射**：当工资表的列名发生变化（如 `"实发合计"` 改为 `"实发工资"`），只需修改配置文件中的 `keywords`
+- **钉钉表格字段映射**：当钉钉 OA 审批模板的表格字段名称变化时，修改 `table_field.columns` 中的 `label`
+- **单位名称提取**：支持自定义正则表达式匹配单位名称
+
+### 配置文件格式
+
+创建 `config.json`（与 `demo_app.py` 同级）：
+
+```json
+{
+  "excel": {
+    "summary_row_marker": "合计",
+    "unit_name_patterns": [
+      "(?:单位名称[：:]|[名称][：:]\\s*)(.+?)(?:\\s|$)"
+    ],
+    "columns": {
+      "transfer_total": {
+        "keywords": ["转账合计"],
+        "label": "转账合计（元）"
+      },
+      "deduction_total": {
+        "keywords": ["扣款合计", "扣款"],
+        "label": "扣款合计（五险一金、单位代理费）"
+      },
+      "net_total": {
+        "keywords": ["实发合计", "实发工资", "实发"],
+        "label": "实发合计（元）"
+      }
+    }
+  },
+  "table_field": {
+    "columns": [
+      {"key": "report_name", "label": "报表名称"},
+      {"key": "unit_name", "label": "甲方单位项目名称"},
+      {"key": "transfer_total", "label": "转账合计（元）"},
+      {"key": "deduction_total", "label": "扣款合计（五险一金、单位代理费）"},
+      {"key": "net_total", "label": "实发合计（元）"},
+      {"key": "tax_and_others", "label": "个人所得税及其他"}
+    ]
+  }
+}
+```
+
+### 配置项说明
+
+| 路径 | 说明 |
+|------|------|
+| `excel.summary_row_marker` | 汇总行的首列标识文本，默认 `"合计"` |
+| `excel.unit_name_patterns` | 提取单位名称的正则表达式列表，按顺序匹配 |
+| `excel.columns.{key}.keywords` | 查找 Excel 列时匹配的文本列表，按顺序尝试 |
+| `excel.columns.{key}.label` | 该列在数据预览中的显示名称 |
+| `table_field.columns` | 钉钉 OA 审批表格字段列表，`key` 对应内部数据键，`label` 对应钉钉表单字段名 |
+
+### 向后兼容
+
+如果 `config.json` 不存在或解析失败，程序会自动使用内置的默认配置，旧用户无需任何改动即可正常运行。
+
 ## 常见问题
 
 **登录报 400 错误**
