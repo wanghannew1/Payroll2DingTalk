@@ -47,6 +47,10 @@ DEFAULT_CONFIG = {
             {"key": "net_total", "label": "实发合计（元）"},
             {"key": "tax_and_others", "label": "个人所得税及其他"}
         ]
+    },
+    "ui": {
+        "template_name": "工资发放审批",
+        "description": "请上传 Excel 工资表，系统将自动解析数据并提交钉钉 OA 审批流程。"
     }
 }
 
@@ -428,7 +432,13 @@ def generate_title(unit_names, year_month, amounts):
 
 
 def main():
-    st.title("工资单上传钉钉审批")
+    ui_config = CONFIG.get("ui", DEFAULT_CONFIG["ui"])
+    template_name = ui_config.get("template_name", "工资发放审批")
+    description = ui_config.get("description", "")
+
+    st.title(f"📋 {template_name}")
+    if description:
+        st.info(description)
 
     if "logged_in" not in st.session_state:
         st.session_state.logged_in = False

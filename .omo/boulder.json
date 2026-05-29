@@ -8,7 +8,7 @@
       "plan_name": "demo-app",
       "status": "completed",
       "started_at": "2026-05-28T06:37:16.254Z",
-      "updated_at": "2026-05-28T06:59:05.869Z",
+      "updated_at": "2026-05-28T10:29:35.283Z",
       "session_ids": [
         "ses_19735d85affetAnbx64FmwBitr"
       ],
@@ -20,13 +20,15 @@
         "todo:1": {
           "task_key": "todo:1",
           "task_label": "1",
-          "task_title": "基础架构：config + DingTalkClient 类 + Streamlit 页面框架",
-          "session_id": "ses_192ad2c8fffebP13xprTJCMsxe",
+          "task_title": "钉钉 API 调用超时时间从 10 秒增加到 30 秒",
+          "session_id": "ses_191def08fffeMhWOCyKrZ0utIT",
           "agent": "Sisyphus-Junior",
-          "category": "deep",
-          "updated_at": "2026-05-28T06:52:37.683Z",
+          "category": "quick",
           "started_at": "2026-05-28T06:52:37.683Z",
-          "status": "running"
+          "status": "completed",
+          "updated_at": "2026-05-28T10:29:35.283Z",
+          "ended_at": "2026-05-28T10:29:35.283Z",
+          "elapsed_ms": 13017600
         },
         "final-wave:f1": {
           "task_key": "final-wave:f1",
@@ -47,7 +49,7 @@
   "active_plan": "/home/ubuntu/coding/Payroll2DingTalk/.omo/plans/demo-app.md",
   "started_at": "2026-05-28T06:37:16.254Z",
   "status": "completed",
-  "updated_at": "2026-05-28T06:59:05.869Z",
+  "updated_at": "2026-05-28T10:29:35.283Z",
   "session_ids": [
     "ses_19735d85affetAnbx64FmwBitr"
   ],
@@ -59,13 +61,15 @@
     "todo:1": {
       "task_key": "todo:1",
       "task_label": "1",
-      "task_title": "基础架构：config + DingTalkClient 类 + Streamlit 页面框架",
-      "session_id": "ses_192ad2c8fffebP13xprTJCMsxe",
+      "task_title": "钉钉 API 调用超时时间从 10 秒增加到 30 秒",
+      "session_id": "ses_191def08fffeMhWOCyKrZ0utIT",
       "agent": "Sisyphus-Junior",
-      "category": "deep",
-      "updated_at": "2026-05-28T06:52:37.683Z",
+      "category": "quick",
       "started_at": "2026-05-28T06:52:37.683Z",
-      "status": "running"
+      "status": "completed",
+      "updated_at": "2026-05-28T10:29:35.283Z",
+      "ended_at": "2026-05-28T10:29:35.283Z",
+      "elapsed_ms": 13017600
     },
     "final-wave:f1": {
       "task_key": "final-wave:f1",
