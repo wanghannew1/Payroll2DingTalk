@@ -448,19 +448,11 @@ def parse_excel(file_bytes, filename):
                 if candidates:
                     unit_name = max(candidates, key=len)
 
-    # Year month: filename → title → 前 5 行任意单元格文本（兜底）
-    # 兼容 4 位年/2 位年、1 位月/2 位月，统一归一化为 YYYY年MM月
-    year_month = _extract_year_month(filename) or _extract_year_month(report_name)
-    if not year_month:
-        for row in rows[:5]:
-            for cell in row:
-                if cell is None:
-                    continue
-                year_month = _extract_year_month(str(cell))
-                if year_month:
-                    break
-            if year_month:
-                break
+    # Year month: 优先取标题（审计权威来源），文件名作为兜底
+    # 同时单独保留两路结果，供 UI 做「标题 vs 文件名」一致性提醒
+    year_month_from_title = _extract_year_month(report_name)
+    year_month_from_filename = _extract_year_month(filename)
+    year_month = year_month_from_title or year_month_from_filename
 
     summary_marker = excel_cfg.get("summary_row_marker", default_excel["summary_row_marker"])
     # Strip ALL whitespace (incl. internal) to tolerate variants like "合 计" / " 合计 "
@@ -478,6 +470,8 @@ def parse_excel(file_bytes, filename):
             "report_name": report_name,
             "unit_name": unit_name,
             "year_month": year_month,
+            "year_month_from_title": year_month_from_title,
+            "year_month_from_filename": year_month_from_filename,
             "transfer_total": "0.00",
             "deduction_total": "0.00",
             "net_total": "0.00",
@@ -540,6 +534,8 @@ def parse_excel(file_bytes, filename):
         "report_name": report_name,
         "unit_name": unit_name,
         "year_month": year_month,
+        "year_month_from_title": year_month_from_title,
+        "year_month_from_filename": year_month_from_filename,
         "transfer_total": transfer_total,
         "deduction_total": deduction_total,
         "net_total": net_total,
@@ -636,6 +632,21 @@ def main():
     if not parsed_list:
         st.error("未能解析任何文件，请检查格式")
         return
+
+    # 标题 vs 文件名年月一致性检查（取标题为准；不一致时提醒制表人核对）
+    for p in parsed_list:
+        t = p.get("year_month_from_title", "")
+        f = p.get("year_month_from_filename", "")
+        if t and f and t != f:
+            st.warning(
+                f"⚠️ {p['filename']}：标题中年月「{t}」与文件名年月「{f}」不一致，"
+                f"已以**标题**为准。请确认报表标题是否需要更正。"
+            )
+        elif not t and f:
+            st.warning(
+                f"⚠️ {p['filename']}：报表标题中未识别到年月，已退回使用文件名年月「{f}」。"
+                f"建议在标题中明确写出年月。"
+            )
 
     # Preview table
     st.subheader("数据预览")
