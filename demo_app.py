@@ -52,8 +52,21 @@ DEFAULT_CONFIG = {
             "net_total": {
                 "keywords": ["实发合计", "实发工资", "实发"],
                 "label": "实发合计（元）"
+            },
+            "personal_tax": {
+                "keywords": ["个税", "个人所得税"],
+                "label": "个人所得税"
             }
         }
+    },
+    "validation": {
+        "enabled": False,
+        "strict": True,
+        "tolerance": 0.00,
+        "write_back_sheet": True,
+        "write_back_sheet_name": "验证结果",
+        "column_sum_checks": [],
+        "row_formulas": []
     },
     "table_field": {
         "columns": [
@@ -458,11 +471,13 @@ def parse_excel(file_bytes, filename):
     # Strip ALL whitespace (incl. internal) to tolerate variants like "合 计" / " 合计 "
     marker_normalized = re.sub(r"\s+", "", summary_marker)
     summary_row = None
-    for row in rows:
+    summary_row_idx = -1
+    for ridx, row in enumerate(rows):
         if row and row[0] is not None:
             first_cell = re.sub(r"\s+", "", str(row[0]))
             if first_cell == marker_normalized:
                 summary_row = row
+                summary_row_idx = ridx
                 break
 
     if summary_row is None:
@@ -476,6 +491,9 @@ def parse_excel(file_bytes, filename):
             "deduction_total": "0.00",
             "net_total": "0.00",
             "tax_and_others": "0.00",
+            "column_indices": {},
+            "summary_row": None,
+            "data_rows": [],
         }
 
     # Header rows from config (1-based start, N rows)
@@ -497,15 +515,22 @@ def parse_excel(file_bytes, filename):
         return -1
 
     excel_cols = excel_cfg["columns"]
-    transfer_idx = find_col_index(excel_cols["transfer_total"]["keywords"])
-    deduction_idx = find_col_index(excel_cols["deduction_total"]["keywords"])
 
-    net_keywords = excel_cols["net_total"]["keywords"]
-    net_idx = -1
-    for kw in net_keywords:
-        net_idx = find_col_index([kw])
-        if net_idx != -1:
-            break
+    # 通用化：把 excel.columns 里定义的每一列都找出索引，存到 column_indices
+    # 同时按 keywords 顺序匹配（早出现的优先），跟原来 net_total 的逻辑一致
+    column_indices = {}
+    for col_key, col_def in excel_cols.items():
+        keywords = col_def.get("keywords", [])
+        idx = -1
+        for kw in keywords:
+            idx = find_col_index([kw])
+            if idx != -1:
+                break
+        column_indices[col_key] = idx
+
+    transfer_idx = column_indices.get("transfer_total", -1)
+    deduction_idx = column_indices.get("deduction_total", -1)
+    net_idx = column_indices.get("net_total", -1)
 
     def get_val(idx):
         if idx >= 0 and idx < len(summary_row):
@@ -530,6 +555,16 @@ def parse_excel(file_bytes, filename):
     except (ValueError, TypeError):
         tax_and_others = "0.00"
 
+    # 数据行 = 表头之后 到 合计行之前；过滤掉全空行
+    header_end_idx = header_start_idx + header_row_count
+    data_rows = []
+    for r in rows[header_end_idx:summary_row_idx]:
+        if r is None:
+            continue
+        if all(c is None or (isinstance(c, str) and not c.strip()) for c in r):
+            continue
+        data_rows.append(r)
+
     return {
         "report_name": report_name,
         "unit_name": unit_name,
@@ -540,7 +575,260 @@ def parse_excel(file_bytes, filename):
         "deduction_total": deduction_total,
         "net_total": net_total,
         "tax_and_others": tax_and_others,
+        "column_indices": column_indices,
+        "summary_row": summary_row,
+        "data_rows": data_rows,
     }
+
+
+def _to_money(v):
+    """把单元格值转成 round 到 2 位小数的 float；None/空/非数 → 0.0。"""
+    if v is None:
+        return 0.0
+    if isinstance(v, str):
+        s = v.strip()
+        if not s:
+            return 0.0
+        try:
+            return round(float(s), 2)
+        except ValueError:
+            return 0.0
+    try:
+        return round(float(v), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _row_label(row, default_label):
+    """数据行标识：序号+姓名 → 'row 8 张吉'；否则只用 default_label。"""
+    if not row:
+        return default_label
+    first = row[0]
+    name = row[1] if len(row) > 1 else None
+    if isinstance(first, (int, float)) and name and str(name).strip():
+        return f"{default_label} {str(name).strip()}"
+    return default_label
+
+
+def validate_payroll(parsed, validation_cfg, excel_cols):
+    """
+    校验解析后的工资表数据，返回结构化结果。
+    parsed: parse_excel 的返回值（必须含 column_indices/summary_row/data_rows）
+    validation_cfg: CONFIG['validation']
+    excel_cols: CONFIG['excel']['columns']
+
+    校验类型：
+      column_sum:           sum(数据列) == 合计行该列
+      row_formula_summary:  合计行 lhs == sum(rhs_plus) - sum(rhs_minus)
+      row_formula_rows:     每个数据行同公式
+    """
+    tolerance = float(validation_cfg.get("tolerance", 0.0))
+    column_indices = parsed.get("column_indices", {})
+    summary_row = parsed.get("summary_row")
+    data_rows = parsed.get("data_rows", [])
+
+    checks = []
+
+    def col_label(key):
+        if key in excel_cols and excel_cols[key].get("label"):
+            return excel_cols[key]["label"]
+        return key
+
+    def col_value(row, key):
+        """从 row 中按 column_indices 取某 key 列的值（→ float）。"""
+        idx = column_indices.get(key, -1)
+        if idx < 0 or row is None or idx >= len(row):
+            return 0.0
+        return _to_money(row[idx])
+
+    def require_col(key, where):
+        if key not in excel_cols:
+            raise ValueError(
+                f"validation 配置中 {where} 引用了 '{key}'，但 excel.columns 未定义该列"
+            )
+        if column_indices.get(key, -1) < 0:
+            # 列已声明但未在 Excel 表头中找到——这是数据/配置不匹配，不阻断校验
+            # 取值会按 0 计，会触发对应的失败 issue（用户能从结果看出来）
+            pass
+
+    # === A. 纵向列加总 ===
+    for spec in validation_cfg.get("column_sum_checks", []) or []:
+        col_key = spec.get("column")
+        if not col_key:
+            continue
+        require_col(col_key, "column_sum_checks")
+        col_sum = sum(col_value(r, col_key) for r in data_rows)
+        col_sum = round(col_sum, 2)
+        summary_val = col_value(summary_row, col_key)
+        diff = round(col_sum - summary_val, 2)
+        passed = abs(diff) <= tolerance
+        checks.append({
+            "kind": "column_sum",
+            "name": f"{col_label(col_key)} 列加总",
+            "column_label": col_label(col_key),
+            "col_sum": col_sum,
+            "summary": summary_val,
+            "diff": diff,
+            "passed": passed,
+            "detail": "" if passed else f"列加总 {col_sum:.2f} 与合计行 {summary_val:.2f} 相差 {diff:+.2f}"
+        })
+
+    # === B+C. 横向公式 ===
+    for formula in validation_cfg.get("row_formulas", []) or []:
+        name = formula.get("name", "<未命名公式>")
+        lhs = formula.get("lhs")
+        rhs_plus = formula.get("rhs_plus", []) or []
+        rhs_minus = formula.get("rhs_minus", []) or []
+        if not lhs:
+            continue
+        require_col(lhs, f"row_formulas[{name}].lhs")
+        for k in rhs_plus:
+            require_col(k, f"row_formulas[{name}].rhs_plus")
+        for k in rhs_minus:
+            require_col(k, f"row_formulas[{name}].rhs_minus")
+
+        def rhs_of(row):
+            return round(
+                sum(col_value(row, k) for k in rhs_plus)
+                - sum(col_value(row, k) for k in rhs_minus),
+                2
+            )
+
+        # B: 合计行
+        L = col_value(summary_row, lhs)
+        R = rhs_of(summary_row)
+        diff = round(L - R, 2)
+        passed = abs(diff) <= tolerance
+        checks.append({
+            "kind": "row_formula_summary",
+            "name": f"{name} (合计行)",
+            "lhs_value": L,
+            "rhs_value": R,
+            "diff": diff,
+            "passed": passed,
+            "detail": "" if passed else f"合计行 lhs={L:.2f}，rhs={R:.2f}，差 {diff:+.2f}"
+        })
+
+        # C: 每个数据行
+        failed_rows = []
+        for ridx, r in enumerate(data_rows):
+            L_r = col_value(r, lhs)
+            R_r = rhs_of(r)
+            d = round(L_r - R_r, 2)
+            if abs(d) > tolerance:
+                failed_rows.append({
+                    "row_label": _row_label(r, f"第 {ridx + 1} 行"),
+                    "lhs": L_r,
+                    "rhs": R_r,
+                    "diff": d,
+                })
+        total_rows = len(data_rows)
+        passed_rows = total_rows - len(failed_rows)
+        passed = len(failed_rows) == 0
+        if passed:
+            detail = f"{passed_rows}/{total_rows} 行通过"
+        else:
+            sample = "; ".join(
+                f"{f['row_label']} 差 {f['diff']:+.2f}" for f in failed_rows[:3]
+            )
+            more = f"...（共 {len(failed_rows)} 行不通过）" if len(failed_rows) > 3 else ""
+            detail = f"{passed_rows}/{total_rows} 行通过；失败例: {sample}{more}"
+        checks.append({
+            "kind": "row_formula_rows",
+            "name": f"{name} (每行)",
+            "total_rows": total_rows,
+            "passed_rows": passed_rows,
+            "failed_rows": failed_rows,
+            "passed": passed,
+            "detail": detail
+        })
+
+    passed_count = sum(1 for c in checks if c["passed"])
+    failed_count = len(checks) - passed_count
+    return {
+        "ok": failed_count == 0,
+        "passed_count": passed_count,
+        "failed_count": failed_count,
+        "checks": checks,
+    }
+
+
+def append_validation_sheet(file_bytes, validation_result,
+                            sheet_name="验证结果",
+                            source_filename=""):
+    """
+    在 Excel 字节流末尾追加一个 sheet，写入校验结果。原表数据不动。
+    如果同名 sheet 已存在（重复处理场景），先删后建，保证幂等。
+    返回新的字节流。
+    """
+    from openpyxl.styles import PatternFill, Font, Alignment
+
+    wb = openpyxl.load_workbook(BytesIO(file_bytes))
+    if sheet_name in wb.sheetnames:
+        del wb[sheet_name]
+    ws = wb.create_sheet(sheet_name)
+
+    title_font = Font(bold=True, size=14)
+    header_font = Font(bold=True)
+    meta_font = Font(italic=True, color="666666")
+    pass_fill = PatternFill("solid", fgColor="E6F4EA")  # 淡绿
+    fail_fill = PatternFill("solid", fgColor="FCE8E6")  # 淡红
+    header_fill = PatternFill("solid", fgColor="EFEFEF")
+    center = Alignment(horizontal="center", vertical="center")
+
+    # 标题
+    ws["A1"] = "工资表校验结果"
+    ws["A1"].font = title_font
+    ws.merge_cells("A1:D1")
+    ws["A1"].alignment = center
+
+    # 元数据
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    passed = validation_result.get("passed_count", 0)
+    failed = validation_result.get("failed_count", 0)
+    meta_rows = [
+        ("生成时间", now_str),
+        ("源文件", source_filename or "(未提供)"),
+        ("汇总", f"{passed} 项通过 / {failed} 项失败"),
+    ]
+    for i, (k, v) in enumerate(meta_rows, start=2):
+        ws.cell(row=i, column=1, value=k).font = meta_font
+        ws.cell(row=i, column=2, value=v).font = meta_font
+
+    # 明细表头
+    head_row = 2 + len(meta_rows) + 1  # 留一行空
+    headers = ["校验项", "类型", "结果", "说明"]
+    for cidx, h in enumerate(headers, start=1):
+        c = ws.cell(row=head_row, column=cidx, value=h)
+        c.font = header_font
+        c.fill = header_fill
+        c.alignment = center
+
+    kind_label = {
+        "column_sum": "纵向加总",
+        "row_formula_summary": "横向公式",
+        "row_formula_rows": "横向公式",
+    }
+
+    # 明细行
+    for i, ck in enumerate(validation_result.get("checks", []), start=head_row + 1):
+        ws.cell(row=i, column=1, value=ck.get("name", ""))
+        ws.cell(row=i, column=2, value=kind_label.get(ck.get("kind"), ck.get("kind", "")))
+        ws.cell(row=i, column=3, value="✅ 通过" if ck.get("passed") else "❌ 失败")
+        ws.cell(row=i, column=4, value=ck.get("detail", ""))
+        fill = pass_fill if ck.get("passed") else fail_fill
+        for cidx in range(1, 5):
+            ws.cell(row=i, column=cidx).fill = fill
+
+    # 列宽
+    ws.column_dimensions["A"].width = 32
+    ws.column_dimensions["B"].width = 12
+    ws.column_dimensions["C"].width = 10
+    ws.column_dimensions["D"].width = 60
+
+    out = BytesIO()
+    wb.save(out)
+    return out.getvalue()
 
 
 def generate_title(unit_names, year_month, amounts):
@@ -648,6 +936,24 @@ def main():
                 f"建议在标题中明确写出年月。"
             )
 
+    # 工资表内容校验
+    val_cfg = CONFIG.get("validation", DEFAULT_CONFIG["validation"])
+    validation_results = {}  # {filename: validation_result}
+    submit_blocked = False
+    if val_cfg.get("enabled"):
+        excel_cols_def = CONFIG.get("excel", {}).get("columns", {})
+        for p in parsed_list:
+            try:
+                vr = validate_payroll(p, val_cfg, excel_cols_def)
+            except ValueError as e:
+                st.error(f"⚠️ {p['filename']} 校验配置错误：{e}")
+                vr = None
+                if val_cfg.get("strict"):
+                    submit_blocked = True
+            validation_results[p["filename"]] = vr
+            if vr is not None and not vr["ok"] and val_cfg.get("strict"):
+                submit_blocked = True
+
     # Preview table
     st.subheader("数据预览")
     preview_data = []
@@ -656,8 +962,26 @@ def main():
         row = {"文件名": p["filename"], "年月": p["year_month"]}
         for col in tf_columns:
             row[col["label"]] = p[col["key"]]
+        # 验证结果列
+        if val_cfg.get("enabled"):
+            vr = validation_results.get(p["filename"])
+            if vr is None:
+                row["验证结果"] = "⚠️ 配置错误"
+            elif vr["ok"]:
+                row["验证结果"] = f"✅ 全部通过 ({vr['passed_count']} 项)"
+            else:
+                row["验证结果"] = f"⚠️ {vr['failed_count']}/{vr['passed_count'] + vr['failed_count']} 项未通过"
         preview_data.append(row)
     st.dataframe(preview_data)
+
+    # 提示：若有失败，告诉用户去看 Excel sheet
+    if val_cfg.get("enabled") and any(
+        vr is not None and not vr["ok"] for vr in validation_results.values()
+    ):
+        st.info(
+            f"📋 详细校验明细已写入附件的「{val_cfg.get('write_back_sheet_name', '验证结果')}」sheet，"
+            f"审批人可在钉钉打开附件查看。"
+        )
 
     # Generate title
     # Sort by transfer_total desc
@@ -673,7 +997,9 @@ def main():
     st.text_input("审批标题（自动生成）", value=title, disabled=True)
 
     # Submit button
-    if st.button("提交审批"):
+    if submit_blocked:
+        st.error("⚠️ 校验未通过且当前为严格模式，请修改 Excel 后重新上传")
+    if st.button("提交审批", disabled=submit_blocked):
         progress_bar = st.progress(0)
         status_text = st.empty()
 
@@ -688,6 +1014,19 @@ def main():
                 status_text.text(f"正在上传：{upfile.name} ...")
                 file_bytes = upfile.read()
                 upfile.seek(0)
+
+                # 若启用了 write_back_sheet，把校验结果作为新 sheet 追加到 Excel 后再上传
+                vr = validation_results.get(upfile.name)
+                if vr is not None and val_cfg.get("enabled") and val_cfg.get("write_back_sheet", True):
+                    try:
+                        file_bytes = append_validation_sheet(
+                            file_bytes,
+                            vr,
+                            sheet_name=val_cfg.get("write_back_sheet_name", "验证结果"),
+                            source_filename=upfile.name,
+                        )
+                    except Exception as e:
+                        st.warning(f"⚠️ {upfile.name}：写入验证 sheet 失败（{e}），将上传原文件")
 
                 # Authorize before EACH upload
                 space_id = client.authorize_upload(user_id)

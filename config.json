@@ -28,8 +28,32 @@
       "net_total": {
         "keywords": ["实发工资"],
         "label": "实发工资（元）"
+      },
+      "personal_tax": {
+        "keywords": ["个税", "个人所得税"],
+        "label": "个人所得税"
       }
     }
+  },
+  "validation": {
+    "enabled": true,
+    "strict": true,
+    "tolerance": 0.00,
+    "write_back_sheet": true,
+    "write_back_sheet_name": "验证结果",
+    "column_sum_checks": [
+      {"column": "deduction_total"},
+      {"column": "net_total"},
+      {"column": "personal_tax"}
+    ],
+    "row_formulas": [
+      {
+        "name": "转款合计 = 扣款合计 + 个人所得税 + 实发工资",
+        "lhs": "transfer_total",
+        "rhs_plus": ["deduction_total", "personal_tax", "net_total"],
+        "rhs_minus": []
+      }
+    ]
   },
   "table_field": {
     "columns": [
