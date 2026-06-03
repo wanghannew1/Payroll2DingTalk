@@ -2,6 +2,7 @@ import os
 import re
 import json
 import time
+from datetime import datetime
 from io import BytesIO
 
 import requests
@@ -298,6 +299,68 @@ class DingTalkClient:
         return data.get("instanceId", "")
 
 
+def _extract_year_month(text, current_year=None):
+    """
+    从一段文本里抽取「YYYY年MM月」并归一化为 4位年+2位月 字符串。
+
+    支持的形态（按从严到宽顺序）：
+      1) 4位年+1或2位月，连体：  2026年5月  / 2026年05月
+      2) 2位年+1或2位月，连体：  26年5月
+      3) 分离形态：先找最右一个「YYYY年」或「YY年」，再在其后找最近的「N月」
+         例：「...2026年派遣员工5月工资明细表」
+
+    2 位年归一化规则：>= (current_year-50) 的两位数算 21 世纪，否则算 20 世纪。
+    匹配不到返回 ""。
+    """
+    if not text:
+        return ""
+    if current_year is None:
+        current_year = datetime.now().year
+
+    def normalize(y, mo):
+        y = int(y); mo = int(mo)
+        if y < 100:
+            # 2 位年补全：在 [current-50, current+49] 范围里选
+            century_base = (current_year // 100) * 100  # 2000
+            cand_new = century_base + y                 # 2026
+            cand_old = cand_new - 100                   # 1926
+            # 选离当前年最近、且距离 < 50 的那个
+            if abs(cand_new - current_year) < 50:
+                y = cand_new
+            else:
+                y = cand_old
+        if not (1 <= mo <= 12):
+            return ""
+        return f"{y:04d}年{mo:02d}月"
+
+    # 规则 1：4 位年连体
+    m = re.search(r"(\d{4})年(\d{1,2})月", text)
+    if m:
+        out = normalize(m.group(1), m.group(2))
+        if out:
+            return out
+
+    # 规则 2：2 位年连体（注意要求年前面不是数字，避免吃掉 4 位年的尾巴）
+    m = re.search(r"(?<!\d)(\d{2})年(\d{1,2})月", text)
+    if m:
+        out = normalize(m.group(1), m.group(2))
+        if out:
+            return out
+
+    # 规则 3：分离形态——先找最后一个 N年，再在其后找 N月
+    year_match = None
+    for ym in re.finditer(r"(?<!\d)(\d{4}|\d{2})年", text):
+        year_match = ym
+    if year_match:
+        tail = text[year_match.end():]
+        mo_match = re.search(r"(\d{1,2})月", tail)
+        if mo_match:
+            out = normalize(year_match.group(1), mo_match.group(1))
+            if out:
+                return out
+    return ""
+
+
 def parse_excel(file_bytes, filename):
     """
     Extract payroll data from Excel bytes.
@@ -385,13 +448,19 @@ def parse_excel(file_bytes, filename):
                 if candidates:
                     unit_name = max(candidates, key=len)
 
-    # Year month from filename or title
-    year_month = ""
-    m = re.search(r"(\d{4}年\d{2}月)", filename)
-    if not m:
-        m = re.search(r"(\d{4}年\d{2}月)", report_name)
-    if m:
-        year_month = m.group(1)
+    # Year month: filename → title → 前 5 行任意单元格文本（兜底）
+    # 兼容 4 位年/2 位年、1 位月/2 位月，统一归一化为 YYYY年MM月
+    year_month = _extract_year_month(filename) or _extract_year_month(report_name)
+    if not year_month:
+        for row in rows[:5]:
+            for cell in row:
+                if cell is None:
+                    continue
+                year_month = _extract_year_month(str(cell))
+                if year_month:
+                    break
+            if year_month:
+                break
 
     summary_marker = excel_cfg.get("summary_row_marker", default_excel["summary_row_marker"])
     # Strip ALL whitespace (incl. internal) to tolerate variants like "合 计" / " 合计 "
