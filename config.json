@@ -1,36 +1,47 @@
 {
   "excel": {
+    "title_row": 1,
+    "unit_name_row": 0,
+    "header_start_row": 2,
+    "header_row_count": 3,
     "summary_row_marker": "合计",
     "unit_name_patterns": [
       "(?:单位名称[：:]|[名称][：:]\\s*)(.+?)(?:\\s|$)"
     ],
+    "title_unit_suffixes": [
+      "有限公司", "股份公司", "分公司", "公司", "集团",
+      "医院", "卫生院", "诊所",
+      "研究院", "研究所", "学院", "大学", "学校",
+      "中心", "管委会", "事业部", "处", "局"
+    ],
+    "title_unit_allowed_chars": "[一-龥A-Za-z0-9（）()·\\-—]",
+    "title_unit_patterns": [],
     "columns": {
       "transfer_total": {
-        "keywords": ["转账合计"],
+        "keywords": ["转款合计", "转账合计"],
         "label": "转账合计（元）"
       },
       "deduction_total": {
-        "keywords": ["扣款合计", "扣款"],
+        "keywords": ["扣款合计"],
         "label": "扣款合计（五险一金、单位代理费）"
       },
       "net_total": {
-        "keywords": ["实发合计", "实发工资", "实发"],
-        "label": "实发合计（元）"
+        "keywords": ["实发工资"],
+        "label": "实发工资（元）"
       }
     }
   },
   "table_field": {
     "columns": [
       {"key": "report_name", "label": "报表名称"},
-      {"key": "unit_name", "label": "甲方单位项目名称"},
       {"key": "transfer_total", "label": "转账合计（元）"},
       {"key": "deduction_total", "label": "扣款合计（五险一金、单位代理费）"},
-      {"key": "net_total", "label": "实发合计（元）"},
+      {"key": "net_total", "label": "实发工资（元）"},
       {"key": "tax_and_others", "label": "个人所得税及其他"}
     ]
   },
   "ui": {
-    "template_name": "工资发放审批",
-    "description": "请上传 Excel 工资表，系统将自动解析数据并提交钉钉 OA 审批流程。"
+    "template_name": "212室彩虹公司项目工资发放审批",
+    "description": "可上传212室彩虹公司项目手工编写的工资发放表，无“实发合计”项，不支持东软系统导出的工资表。对应的OA审批名称：工资发放审批（手工做表）"
   }
 }

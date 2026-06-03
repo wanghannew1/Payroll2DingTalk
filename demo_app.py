@@ -19,10 +19,26 @@ PROCESS_CODE = os.getenv("DINGTALK_PROCESS_CODE", "")
 
 DEFAULT_CONFIG = {
     "excel": {
+        "title_row": 1,           # 报表名所在行（1-based）
+        "unit_name_row": 2,       # 单位名所在行（1-based）；0 表示无此行，单位名从标题行用正则提取
+        "header_start_row": 3,    # 表头起始行（1-based）
+        "header_row_count": 3,    # 表头占几行（适配多级合并表头）
         "summary_row_marker": "合计",
         "unit_name_patterns": [
             r"(?:单位名称[：:]|[名称][：:]\s*)(.+?)(?:\s|$)"
         ],
+        # 从标题行提取单位名（unit_name_row=0 时启用）
+        # 算法：枚举标题里每个后缀的所有出现位置，从该位置向左扩展（只接受 ALLOWED 里的字符），
+        # 得到所有候选后取「最长」一个。能正确处理「...有限公司净月团餐—分公司」这种嵌套后缀。
+        # title_unit_patterns 是高级正则逃生口：若配置非空，则按列表里第一个能 search 命中的 group(1) 直接返回。
+        "title_unit_suffixes": [
+            "有限公司", "股份公司", "分公司", "公司", "集团",
+            "医院", "卫生院", "诊所",
+            "研究院", "研究所", "学院", "大学", "学校",
+            "中心", "管委会", "事业部", "处", "局"
+        ],
+        "title_unit_allowed_chars": r"[一-龥A-Za-z0-9（）()·\-—]",
+        "title_unit_patterns": [],
         "columns": {
             "transfer_total": {
                 "keywords": ["转账合计"],
@@ -295,35 +311,79 @@ def parse_excel(file_bytes, filename):
     if not rows:
         return None
 
-    # Row 1: report name (first non-empty cell)
-    report_name = ""
-    for cell in rows[0]:
-        if cell is not None and str(cell).strip():
-            report_name = str(cell).strip()
-            break
+    excel_cfg = CONFIG.get("excel", DEFAULT_CONFIG["excel"])
+    default_excel = DEFAULT_CONFIG["excel"]
+    title_row_idx = int(excel_cfg.get("title_row", default_excel["title_row"])) - 1
+    unit_name_row_cfg = int(excel_cfg.get("unit_name_row", default_excel["unit_name_row"]))
+    header_start_idx = int(excel_cfg.get("header_start_row", default_excel["header_start_row"])) - 1
+    header_row_count = int(excel_cfg.get("header_row_count", default_excel["header_row_count"]))
 
-    # Row 2: unit name
-    unit_name = ""
-    if len(rows) > 1:
-        row2_text = " ".join(
-            str(cell).strip() for cell in rows[1] if cell is not None
-        )
-        patterns = CONFIG["excel"].get("unit_name_patterns", DEFAULT_CONFIG["excel"]["unit_name_patterns"])
-        matched = False
-        for pattern in patterns:
-            m = re.search(pattern, row2_text)
-            if m:
-                unit_name = m.group(1).strip()
-                matched = True
+    # Title row: report name (first non-empty cell)
+    report_name = ""
+    if 0 <= title_row_idx < len(rows):
+        for cell in rows[title_row_idx]:
+            if cell is not None and str(cell).strip():
+                report_name = str(cell).strip()
                 break
-        if not matched:
-            # Fallback: use first non-empty cell in row 2
-            for cell in rows[1]:
-                if cell is not None and str(cell).strip():
-                    val = str(cell).strip()
-                    if "名称" in val or "单位" in val:
-                        unit_name = val.replace("单位", "").replace("名称", "").replace("：", "").replace(":", "").strip()
-                        break
+
+    patterns = excel_cfg.get("unit_name_patterns", default_excel["unit_name_patterns"])
+    title_patterns = excel_cfg.get("title_unit_patterns", default_excel["title_unit_patterns"])
+    title_suffixes = excel_cfg.get("title_unit_suffixes", default_excel["title_unit_suffixes"])
+    title_allowed = excel_cfg.get("title_unit_allowed_chars", default_excel["title_unit_allowed_chars"])
+
+    # Unit name: from unit_name_row if configured, else extract from title row
+    unit_name = ""
+    if unit_name_row_cfg > 0:
+        unit_row_idx = unit_name_row_cfg - 1
+        if 0 <= unit_row_idx < len(rows):
+            row_text = " ".join(
+                str(cell).strip() for cell in rows[unit_row_idx] if cell is not None
+            )
+            matched = False
+            for pattern in patterns:
+                m = re.search(pattern, row_text)
+                if m:
+                    unit_name = m.group(1).strip()
+                    matched = True
+                    break
+            if not matched:
+                # Fallback: use first non-empty cell in that row
+                for cell in rows[unit_row_idx]:
+                    if cell is not None and str(cell).strip():
+                        val = str(cell).strip()
+                        if "名称" in val or "单位" in val:
+                            unit_name = val.replace("单位", "").replace("名称", "").replace("：", "").replace(":", "").strip()
+                            break
+    else:
+        # No dedicated unit row → extract from title row
+        # 1) 高级用户可通过 title_unit_patterns 提供自定义正则（取第一个命中的 group 1）
+        if title_patterns:
+            for pattern in title_patterns:
+                try:
+                    m = re.search(pattern, report_name)
+                except re.error:
+                    continue
+                if m and m.lastindex:
+                    unit_name = m.group(1).strip()
+                    break
+        # 2) 否则用「后缀枚举 + 向左贪婪扩展 + 取最长」算法
+        if not unit_name and title_suffixes:
+            try:
+                allowed_re = re.compile(title_allowed)
+            except re.error:
+                allowed_re = None
+            if allowed_re is not None:
+                candidates = []
+                for suf in title_suffixes:
+                    for m in re.finditer(re.escape(suf), report_name):
+                        start = m.start()
+                        while start > 0 and allowed_re.fullmatch(report_name[start - 1]):
+                            start -= 1
+                        cand = report_name[start : m.end()].strip()
+                        if cand:
+                            candidates.append(cand)
+                if candidates:
+                    unit_name = max(candidates, key=len)
 
     # Year month from filename or title
     year_month = ""
@@ -333,12 +393,16 @@ def parse_excel(file_bytes, filename):
     if m:
         year_month = m.group(1)
 
-    summary_marker = CONFIG["excel"].get("summary_row_marker", "合计")
+    summary_marker = excel_cfg.get("summary_row_marker", default_excel["summary_row_marker"])
+    # Strip ALL whitespace (incl. internal) to tolerate variants like "合 计" / " 合计 "
+    marker_normalized = re.sub(r"\s+", "", summary_marker)
     summary_row = None
     for row in rows:
-        if row and str(row[0]).strip() == summary_marker:
-            summary_row = row
-            break
+        if row and row[0] is not None:
+            first_cell = re.sub(r"\s+", "", str(row[0]))
+            if first_cell == marker_normalized:
+                summary_row = row
+                break
 
     if summary_row is None:
         return {
@@ -351,8 +415,8 @@ def parse_excel(file_bytes, filename):
             "tax_and_others": "0.00",
         }
 
-    # Find column indices from header rows (rows 3-5, 0-indexed 2-4)
-    header_rows = rows[2:5]
+    # Header rows from config (1-based start, N rows)
+    header_rows = rows[header_start_idx : header_start_idx + header_row_count]
 
     def find_col_index(keywords, exact_first=True):
         """Find column index matching keywords in header rows."""
@@ -369,7 +433,7 @@ def parse_excel(file_bytes, filename):
                         return cidx
         return -1
 
-    excel_cols = CONFIG["excel"]["columns"]
+    excel_cols = excel_cfg["columns"]
     transfer_idx = find_col_index(excel_cols["transfer_total"]["keywords"])
     deduction_idx = find_col_index(excel_cols["deduction_total"]["keywords"])
 
