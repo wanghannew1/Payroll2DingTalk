@@ -380,10 +380,17 @@ def parse_excel(file_bytes, filename):
     Returns dict with report_name, unit_name, year_month,
     transfer_total, deduction_total, net_total, tax_and_others.
     """
-    wb = openpyxl.load_workbook(BytesIO(file_bytes), data_only=True)
-    ws = wb.active
-
-    rows = list(ws.iter_rows(values_only=True))
+    # 根据扩展名选择解析库：.xlsx → openpyxl, .xls → xlrd
+    filename_lower = filename.lower()
+    if filename_lower.endswith('.xls') and not filename_lower.endswith('.xlsx'):
+        import xlrd
+        wb = xlrd.open_workbook(file_contents=file_bytes)
+        ws = wb.sheet_by_index(0)
+        rows = [ws.row_values(r) for r in range(ws.nrows)]
+    else:
+        wb = openpyxl.load_workbook(BytesIO(file_bytes), data_only=True)
+        ws = wb.active
+        rows = list(ws.iter_rows(values_only=True))
     if not rows:
         return None
 
@@ -760,8 +767,15 @@ def append_validation_sheet(file_bytes, validation_result,
     在 Excel 字节流末尾追加一个 sheet，写入校验结果。原表数据不动。
     如果同名 sheet 已存在（重复处理场景），先删后建，保证幂等。
     返回新的字节流。
+
+    注：.xls (Excel 97-2003) 格式为只读，不支持追加 sheet，
+    此时返回原 bytes，由调用方提示用户。
     """
     from openpyxl.styles import PatternFill, Font, Alignment
+
+    # xlrd 读取的 .xls 无法直接追加 sheet；跳过并返回原文件
+    if source_filename.lower().endswith('.xls') and not source_filename.lower().endswith('.xlsx'):
+        raise ValueError("XLS 格式不支持写入验证 sheet，将上传原文件")
 
     wb = openpyxl.load_workbook(BytesIO(file_bytes))
     if sheet_name in wb.sheetnames:
@@ -901,7 +915,7 @@ def main():
                 st.session_state.pop(key, None)
             st.rerun()
     uploaded_files = st.file_uploader(
-        "上传工资表", type=["xlsx"], accept_multiple_files=True
+        "上传工资表", type=["xlsx", "xls"], accept_multiple_files=True
     )
 
     if not uploaded_files:
