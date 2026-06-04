@@ -301,7 +301,180 @@ sudo nano /etc/logrotate.d/streamlit-payroll
 
 如果 `config.json` 不存在或解析失败，程序会自动使用内置的默认配置，旧用户无需任何改动即可正常运行。
 
-## 常见问题
+---
+
+## 配置文件完整指南
+
+以下是一份**可直接使用的完整配置模板**，包含当前项目支持的所有配置项。你可以根据实际工资表结构调整：
+
+```json
+{
+  "excel": {
+    "title_row": 1,
+    "unit_name_row": 0,
+    "header_start_row": 2,
+    "header_row_count": 3,
+    "summary_row_marker": "合计",
+    "unit_name_patterns": [
+      "(?:单位名称[：:]|[名称][：:]\\s*)(.+?)(?:\\s|$)"
+    ],
+    "title_unit_suffixes": [
+      "有限公司", "股份公司", "分公司", "公司", "集团",
+      "医院", "卫生院", "诊所",
+      "研究院", "研究所", "学院", "大学", "学校",
+      "中心", "管委会", "事业部", "处", "局"
+    ],
+    "title_unit_allowed_chars": "[一-龥A-Za-z0-9（）()·\\-—]",
+    "title_unit_patterns": [],
+    "columns": {
+      "transfer_total": {
+        "keywords": ["转款合计", "转账合计"],
+        "label": "转账合计（元）"
+      },
+      "deduction_total": {
+        "keywords": ["扣款合计"],
+        "label": "扣款合计（五险一金、单位代理费）"
+      },
+      "net_total": {
+        "keywords": ["实发工资"],
+        "label": "实发工资（元）"
+      },
+      "personal_tax": {
+        "keywords": ["个税", "个人所得税"],
+        "label": "个人所得税"
+      }
+    }
+  },
+  "validation": {
+    "enabled": true,
+    "strict": true,
+    "tolerance": 0.00,
+    "write_back_sheet": true,
+    "write_back_sheet_name": "验证结果",
+    "column_sum_checks": [
+      {"column": "deduction_total"},
+      {"column": "net_total"},
+      {"column": "personal_tax"}
+    ],
+    "row_formulas": [
+      {
+        "name": "转款合计 = 扣款合计 + 个人所得税 + 实发工资",
+        "lhs": "transfer_total",
+        "rhs_plus": ["deduction_total", "personal_tax", "net_total"],
+        "rhs_minus": []
+      }
+    ]
+  },
+  "table_field": {
+    "columns": [
+      {"key": "report_name", "label": "报表名称"},
+      {"key": "transfer_total", "label": "转账合计（元）"},
+      {"key": "deduction_total", "label": "扣款合计（五险一金、单位代理费）"},
+      {"key": "net_total", "label": "实发工资（元）"},
+      {"key": "tax_and_others", "label": "个人所得税及其他"}
+    ]
+  },
+  "ui": {
+    "template_name": "工资发放审批",
+    "description": "请上传 Excel 工资表，系统将自动解析数据并提交钉钉 OA 审批流程。"
+  }
+}
+```
+
+### excel 段详解
+
+| 配置项 | 必填 | 说明 |
+|--------|------|------|
+| `title_row` | 否，默认 1 | 报表标题所在行（1-based）。如工资表第 1 行是标题，填 `1` |
+| `unit_name_row` | 否，默认 2 | 单位名称所在行（1-based）。**填 `0` 表示没有独立的单位名称行**，程序会从标题行用正则提取 |
+| `header_start_row` | 否，默认 3 | 表头起始行（1-based）。如表头从第 2 行开始，填 `2` |
+| `header_row_count` | 否，默认 3 | 表头占几行。多级合并表头（如 3 行）填 `3`，单行表头填 `1` |
+| `summary_row_marker` | 否，默认 `"合计"` | 汇总行首列的标识文本。支持中间有空格变体（如 `"合 计"`） |
+| `unit_name_patterns` | 否 | 从单位名称行提取单位名的正则列表。按顺序匹配，第一个命中的 group(1) 即为单位名 |
+| `title_unit_suffixes` | 否 | 当 `unit_name_row=0` 时，从标题行提取单位名所用的组织后缀列表（如 `"有限公司"`、`"研究院"`） |
+| `columns` | **是** | Excel 列定义。每个 key 对应一个列，`keywords` 用于在表头中匹配列位置 |
+
+#### columns 配置规则
+
+`excel.columns` 里定义的每个列，会被程序用来：
+1. 在表头区域（`header_start_row` 开始的 `header_row_count` 行）中搜索匹配的列名
+2. 找到后在合计行中取出该列的数值
+3. 同时该 key 也可以被 `validation` 段和 `table_field` 段引用
+
+**示例**：如果你的工资表里「扣款」列的表头写的是 **"本月扣款合计（五险）"**，而 `keywords` 里配的是 `["扣款合计"]`，程序会命中（因为是子串包含匹配）。但如果表头改成了 **"扣款小计"**，就需要把 `keywords` 改成 `["扣款小计", "扣款合计"]`。
+
+> **重要规则**：`validation` 和 `table_field` 里引用的列 key（如 `personal_tax`），**必须先**在 `excel.columns` 里定义，否则会报 `引用了 'xxx'，但 excel.columns 未定义该列` 的错误。
+
+### validation 段详解
+
+用于校验工资表数据是否正确，校验结果会写入 Excel 的「验证结果」sheet。
+
+| 配置项 | 必填 | 说明 |
+|--------|------|------|
+| `enabled` | 否，默认 `false` | 总开关。`true` 启用校验，`false` 关闭 |
+| `strict` | 否，默认 `true` | `true`：校验失败时红色报错，禁止提交；`false`：仅黄色警告，仍可提交 |
+| `tolerance` | 否，默认 `0.00` | 容差（元）。所有金额先精确到分再比较，差值 ≤ tolerance 算通过 |
+| `write_back_sheet` | 否，默认 `true` | 是否把校验结果写入 Excel 新 sheet |
+| `write_back_sheet_name` | 否，默认 `"验证结果"` | 写入的 sheet 名称 |
+| `column_sum_checks` | 否 | 纵向列加总校验：sum(数据行) == 合计行单元格。只校验列在此名单中的列 |
+| `row_formulas` | 否 | 横向公式校验：同时检查合计行和每个数据行是否满足公式 |
+
+#### column_sum_checks 配置
+
+```json
+"column_sum_checks": [
+  {"column": "deduction_total"},
+  {"column": "net_total"},
+  {"column": "personal_tax"}
+]
+```
+
+每条只写一个 `column`（key 名），程序会对该列做：
+- 把该列所有数据行相加
+- 与合计行该列的数值比较
+- 相等（或在 tolerance 内）→ 通过，否则 → 失败
+
+#### row_formulas 配置
+
+```json
+"row_formulas": [
+  {
+    "name": "转款合计 = 扣款合计 + 个人所得税 + 实发工资",
+    "lhs": "transfer_total",
+    "rhs_plus": ["deduction_total", "personal_tax", "net_total"],
+    "rhs_minus": []
+  }
+]
+```
+
+| 字段 | 说明 |
+|------|------|
+| `name` | 公式名称，显示在校验结果中 |
+| `lhs` | 等式左侧的列 key（如 `transfer_total`） |
+| `rhs_plus` | 等式右侧相加的列 key 列表 |
+| `rhs_minus` | 等式右侧相减的列 key 列表 |
+
+程序会检查：**lhs == sum(rhs_plus) - sum(rhs_minus)**，同时跑合计行和每个数据行。
+
+### 常见问题：校验配置错误
+
+**错误信息**：`validation 配置中 column_sum_checks 引用了 'personal_tax'，但 excel.columns 未定义该列`
+
+**原因**：`validation` 段里的列 key（如 `personal_tax`）在 `excel.columns` 中没有定义。
+
+**解决**：
+1. 如果你的工资表**有**「个税」列 → 在 `excel.columns` 里补上：
+   ```json
+   "personal_tax": {
+     "keywords": ["个税", "个人所得税"],
+     "label": "个人所得税"
+   }
+   ```
+2. 如果你的工资表**没有**「个税」列 → 从 `validation` 段中移除 `personal_tax` 的引用：
+   - `column_sum_checks` 里删掉 `{"column": "personal_tax"}`
+   - `row_formulas` 的 `rhs_plus` 里删掉 `"personal_tax"`
+
+**修改后需要重启 streamlit**：配置只在启动时加载一次。
 
 **登录报 400 错误**
 
