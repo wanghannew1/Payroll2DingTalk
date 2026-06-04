@@ -2,3 +2,5 @@ requests
 openpyxl
 streamlit
 python-dotenv
+xlrd
+xlwt
