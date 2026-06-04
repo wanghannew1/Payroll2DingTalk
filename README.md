@@ -244,16 +244,32 @@ sudo nano /etc/logrotate.d/streamlit-payroll
     ],
     "columns": {
       "transfer_total": {
-        "keywords": ["转账合计"],
+        "keywords": ["转款合计", "转账合计"],
         "label": "转账合计（元）"
       },
       "deduction_total": {
-        "keywords": ["扣款合计", "扣款"],
+        "keywords": ["扣款合计"],
         "label": "扣款合计（五险一金、单位代理费）"
       },
       "net_total": {
-        "keywords": ["实发合计", "实发工资", "实发"],
-        "label": "实发合计（元）"
+        "keywords": ["实发工资"],
+        "label": "实发工资（元）"
+      },
+      "personal_tax": {
+        "keywords": ["个税", "个人所得税"],
+        "label": "个人所得税"
+      },
+      "adjustment": {
+        "keywords": ["调差", "差额调整", "调整差额", "工伤差额", "返还差额"],
+        "label": "调差"
+      },
+      "service_fee": {
+        "keywords": ["服务费", "代理费", "管理费"],
+        "label": "服务费"
+      },
+      "employer_insurance": {
+        "keywords": ["单位缴纳", "单位社保", "单位五险一金"],
+        "label": "单位缴纳"
       }
     }
   },
@@ -293,9 +309,13 @@ sudo nano /etc/logrotate.d/streamlit-payroll
 > | `transfer_total` | 合计行「转款/转账合计」列 | 转账合计 |
 > | `deduction_total` | 合计行「扣款合计」列 | 扣款合计 |
 > | `net_total` | 合计行「实发工资」列 | 实发工资 |
+> | `personal_tax` | 合计行「个税/个人所得税」列 | 个人所得税 |
+> | `adjustment` | 合计行「调差/差额调整」列 | 调差（可正可负） |
+> | `service_fee` | 合计行「服务费/代理费」列 | 服务费 |
+> | `employer_insurance` | 合计行「单位缴纳/单位社保」列 | 单位缴纳社保公积金 |
 > | `tax_and_others` | 程序计算：`transfer_total − deduction_total − net_total` | 个人所得税及其他 |
 >
-> 如果你想添加新的预览列（例如 `personal_tax`），需要先在 `excel.columns` 中定义该列的查找关键词，并确保 `parse_excel()` 的返回值中包含该 key，否则预览页会报错。
+> **缺列处理**：只要列在 `excel.columns` 里定义了，即使某张工资表里没有这个列，程序也不会报错——该列按 **0** 参与计算。这让你可以把所有可能出现的列都预先配置上，适配不同的工资表模板。
 
 ### 向后兼容
 
@@ -342,6 +362,18 @@ sudo nano /etc/logrotate.d/streamlit-payroll
       "personal_tax": {
         "keywords": ["个税", "个人所得税"],
         "label": "个人所得税"
+      },
+      "adjustment": {
+        "keywords": ["调差", "差额调整", "调整差额", "工伤差额", "返还差额"],
+        "label": "调差"
+      },
+      "service_fee": {
+        "keywords": ["服务费", "代理费", "管理费"],
+        "label": "服务费"
+      },
+      "employer_insurance": {
+        "keywords": ["单位缴纳", "单位社保", "单位五险一金"],
+        "label": "单位缴纳"
       }
     }
   },

@@ -32,6 +32,18 @@
       "personal_tax": {
         "keywords": ["个税", "个人所得税"],
         "label": "个人所得税"
+      },
+      "adjustment": {
+        "keywords": ["调差", "差额调整", "调整差额", "工伤差额", "返还差额"],
+        "label": "调差"
+      },
+      "service_fee": {
+        "keywords": ["服务费", "代理费", "管理费"],
+        "label": "服务费"
+      },
+      "employer_insurance": {
+        "keywords": ["单位缴纳", "单位社保", "单位五险一金"],
+        "label": "单位缴纳"
       }
     }
   },
