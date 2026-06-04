@@ -284,6 +284,19 @@ sudo nano /etc/logrotate.d/streamlit-payroll
 | `excel.columns.{key}.label` | 该列在数据预览中的显示名称 |
 | `table_field.columns` | 钉钉 OA 审批表格字段列表，`key` 对应内部数据键，`label` 对应钉钉表单字段名 |
 
+> **重要：`table_field.columns` 中的 `key` 不是随意定义的**，它必须和 `parse_excel()` 函数返回的 dict 中的 key 一一对应。目前可用的 key 如下：
+>
+> | key | 数据来源 | 说明 |
+> |-----|----------|------|
+> | `report_name` | Excel 第 1 行 | 报表标题 |
+> | `unit_name` | Excel 第 2 行 或 标题行正则提取 | 单位名称 |
+> | `transfer_total` | 合计行「转款/转账合计」列 | 转账合计 |
+> | `deduction_total` | 合计行「扣款合计」列 | 扣款合计 |
+> | `net_total` | 合计行「实发工资」列 | 实发工资 |
+> | `tax_and_others` | 程序计算：`transfer_total − deduction_total − net_total` | 个人所得税及其他 |
+>
+> 如果你想添加新的预览列（例如 `personal_tax`），需要先在 `excel.columns` 中定义该列的查找关键词，并确保 `parse_excel()` 的返回值中包含该 key，否则预览页会报错。
+
 ### 向后兼容
 
 如果 `config.json` 不存在或解析失败，程序会自动使用内置的默认配置，旧用户无需任何改动即可正常运行。
