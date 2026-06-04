@@ -500,7 +500,7 @@ def parse_excel(file_bytes, filename):
                 break
 
     if summary_row is None:
-        return {
+        fallback = {
             "report_name": report_name,
             "unit_name": unit_name,
             "year_month": year_month,
@@ -514,6 +514,10 @@ def parse_excel(file_bytes, filename):
             "summary_row": None,
             "data_rows": [],
         }
+        # 兜底也要把 excel.columns 里所有列填上 "0.00"，避免下游 KeyError
+        for col_key in excel_cfg.get("columns", {}):
+            fallback.setdefault(col_key, "0.00")
+        return fallback
 
     # Header rows from config (1-based start, N rows)
     header_rows = rows[header_start_idx : header_start_idx + header_row_count]
@@ -566,6 +570,13 @@ def parse_excel(file_bytes, filename):
     deduction_total = get_val(deduction_idx)
     net_total = get_val(net_idx)
 
+    # 把 excel.columns 里所有定义过的列，都从合计行取值，统一加到返回 dict
+    # 这样 table_field 可以引用任意 excel.columns 里定义的 key（如 personal_tax, adjustment）
+    column_summary_values = {}
+    for col_key, cidx in column_indices.items():
+        column_summary_values[col_key] = get_val(cidx)
+
+    # tax_and_others 保留向后兼容（旧 config 可能还在用）
     try:
         tax_val = float(transfer_total) - float(deduction_total) - float(net_total)
         if abs(tax_val) < 0.005:
@@ -584,20 +595,21 @@ def parse_excel(file_bytes, filename):
             continue
         data_rows.append(r)
 
-    return {
+    result = {
         "report_name": report_name,
         "unit_name": unit_name,
         "year_month": year_month,
         "year_month_from_title": year_month_from_title,
         "year_month_from_filename": year_month_from_filename,
-        "transfer_total": transfer_total,
-        "deduction_total": deduction_total,
-        "net_total": net_total,
         "tax_and_others": tax_and_others,
         "column_indices": column_indices,
         "summary_row": summary_row,
         "data_rows": data_rows,
     }
+    # 把 excel.columns 里所有列的合计值都加上（包括 transfer/deduction/net）
+    # 这样 table_field 可以引用任意已配置的列
+    result.update(column_summary_values)
+    return result
 
 
 def _to_money(v):
