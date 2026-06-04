@@ -1168,18 +1168,28 @@ def main():
         preview_data.append(row)
     st.dataframe(preview_data)
 
+    # 生成审批标题（提前到这里，汇总表文件名要从标题派生）
+    # Sort by transfer_total desc
+    sorted_items = sorted(
+        parsed_list,
+        key=lambda x: float(x["transfer_total"]) if x["transfer_total"] else 0,
+        reverse=True,
+    )
+    unit_names = [p["unit_name"] for p in sorted_items]
+    amounts = [p["transfer_total"] for p in sorted_items]
+    year_month = sorted_items[0]["year_month"] if sorted_items else ""
+    title = generate_title(unit_names, year_month, amounts)
+
     # 生成「工资发放汇总表」xlsx：把数据预览 + 所有附件的验证明细打包成一个文件
     # 用途：(1) .xls 附件无法回写验证 sheet，靠这里集中展示；
     #      (2) 多附件场景下提供全局视图；(3) 作为额外附件随审批一起归档
-    summary_year_month = ""
-    for p in parsed_list:
-        if p.get("year_month"):
-            summary_year_month = p["year_month"]
-            break
-    summary_filename = (
-        f"工资发放汇总表_{summary_year_month}.xlsx"
-        if summary_year_month else "工资发放汇总表.xlsx"
-    )
+    # 文件名从审批标题派生：把"工资发放请示"换成"工资发放汇总表"，与审批主题保持一致
+    if "工资发放请示" in title:
+        summary_filename = title.replace("工资发放请示", "工资发放汇总表") + ".xlsx"
+    else:
+        summary_filename = (
+            f"{title}汇总表.xlsx" if title else "工资发放汇总表.xlsx"
+        )
     try:
         summary_bytes = build_summary_workbook(
             parsed_list,
@@ -1206,17 +1216,7 @@ def main():
             f"或参见上方汇总表的「验证明细」sheet。"
         )
 
-    # Generate title
-    # Sort by transfer_total desc
-    sorted_items = sorted(
-        parsed_list,
-        key=lambda x: float(x["transfer_total"]) if x["transfer_total"] else 0,
-        reverse=True,
-    )
-    unit_names = [p["unit_name"] for p in sorted_items]
-    amounts = [p["transfer_total"] for p in sorted_items]
-    year_month = sorted_items[0]["year_month"] if sorted_items else ""
-    title = generate_title(unit_names, year_month, amounts)
+    # 显示审批标题（title 已在上方汇总表前生成）
     st.text_input("审批标题（自动生成）", value=title, disabled=True)
 
     # Submit button
