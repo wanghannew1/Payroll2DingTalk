@@ -773,10 +773,6 @@ def append_validation_sheet(file_bytes, validation_result,
     """
     from openpyxl.styles import PatternFill, Font, Alignment
 
-    # xlrd 读取的 .xls 无法直接追加 sheet；跳过并返回原文件
-    if source_filename.lower().endswith('.xls') and not source_filename.lower().endswith('.xlsx'):
-        raise ValueError("XLS 格式不支持写入验证 sheet，将上传原文件")
-
     wb = openpyxl.load_workbook(BytesIO(file_bytes))
     if sheet_name in wb.sheetnames:
         del wb[sheet_name]
@@ -1031,16 +1027,16 @@ def main():
 
                 # 若启用了 write_back_sheet，把校验结果作为新 sheet 追加到 Excel 后再上传
                 vr = validation_results.get(upfile.name)
-                if vr is not None and val_cfg.get("enabled") and val_cfg.get("write_back_sheet", True):
-                    try:
-                        file_bytes = append_validation_sheet(
-                            file_bytes,
-                            vr,
-                            sheet_name=val_cfg.get("write_back_sheet_name", "验证结果"),
-                            source_filename=upfile.name,
-                        )
-                    except Exception as e:
-                        st.warning(f"⚠️ {upfile.name}：写入验证 sheet 失败（{e}），将上传原文件")
+                if (vr is not None
+                    and val_cfg.get("enabled")
+                    and val_cfg.get("write_back_sheet", True)
+                    and not upfile.name.lower().endswith(".xls")):
+                    file_bytes = append_validation_sheet(
+                        file_bytes,
+                        vr,
+                        sheet_name=val_cfg.get("write_back_sheet_name", "验证结果"),
+                        source_filename=upfile.name,
+                    )
 
                 # Authorize before EACH upload
                 space_id = client.authorize_upload(user_id)
