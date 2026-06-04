@@ -865,6 +865,166 @@ def append_validation_sheet(file_bytes, validation_result,
     return out.getvalue()
 
 
+def build_summary_workbook(parsed_list, validation_results, tf_columns,
+                           write_back_sheet_name="验证结果"):
+    """
+    生成「工资发放汇总表」xlsx，包含两个 sheet：
+      1) 汇总数据：每行一个附件，列同数据预览（文件名、年月、报表字段...、验证结果）
+      2) 验证明细：所有附件的校验结果合并，多一列"附件名"区分
+
+    解决两个问题：
+      - .xls 附件无法在原文件内回写验证结果
+      - 多附件场景下没有统一的"全局视图"
+    """
+    from openpyxl.styles import PatternFill, Font, Alignment
+
+    wb = openpyxl.Workbook()
+
+    title_font = Font(bold=True, size=14)
+    header_font = Font(bold=True)
+    meta_font = Font(italic=True, color="666666")
+    header_fill = PatternFill("solid", fgColor="EFEFEF")
+    pass_fill = PatternFill("solid", fgColor="E6F4EA")
+    fail_fill = PatternFill("solid", fgColor="FCE8E6")
+    center = Alignment(horizontal="center", vertical="center")
+    money_font = Font(name="Consolas")
+
+    # ===== Sheet 1: 汇总数据 =====
+    ws = wb.active
+    ws.title = "汇总数据"
+
+    headers = ["文件名", "年月"] + [c["label"] for c in tf_columns] + ["验证结果"]
+    ws["A1"] = "工资发放汇总数据"
+    ws["A1"].font = title_font
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
+    ws["A1"].alignment = center
+
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ws["A2"] = f"生成时间：{now_str}    附件数：{len(parsed_list)}"
+    ws["A2"].font = meta_font
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(headers))
+
+    head_row = 4
+    for cidx, h in enumerate(headers, start=1):
+        c = ws.cell(row=head_row, column=cidx, value=h)
+        c.font = header_font
+        c.fill = header_fill
+        c.alignment = center
+
+    for i, p in enumerate(parsed_list, start=head_row + 1):
+        ws.cell(row=i, column=1, value=p.get("filename", ""))
+        ws.cell(row=i, column=2, value=p.get("year_month", ""))
+        for cidx, col in enumerate(tf_columns, start=3):
+            v = p.get(col["key"], "")
+            # 金额列尝试转 float，方便 Excel 求和/排序
+            if isinstance(v, str):
+                try:
+                    v_num = float(v)
+                    cell = ws.cell(row=i, column=cidx, value=v_num)
+                    cell.number_format = "#,##0.00"
+                    cell.font = money_font
+                except ValueError:
+                    ws.cell(row=i, column=cidx, value=v)
+            else:
+                ws.cell(row=i, column=cidx, value=v)
+        # 验证结果列
+        vr = validation_results.get(p.get("filename"))
+        if vr is None:
+            status = "未启用"
+            fill = None
+        elif vr["ok"]:
+            status = f"✅ 全部通过 ({vr['passed_count']} 项)"
+            fill = pass_fill
+        else:
+            status = f"⚠️ {vr['failed_count']} 项未通过 (共 {vr['passed_count']+vr['failed_count']} 项)"
+            fill = fail_fill
+        status_cell = ws.cell(row=i, column=len(headers), value=status)
+        if fill is not None:
+            status_cell.fill = fill
+
+    # 末尾追加一行"总计"，对所有金额列求和（仅数值列）
+    if parsed_list:
+        total_row = head_row + 1 + len(parsed_list)
+        ws.cell(row=total_row, column=1, value="总计").font = header_font
+        for cidx, col in enumerate(tf_columns, start=3):
+            # 试求和：把每行该列取出，能转 float 的相加
+            total = 0.0
+            has_num = False
+            for p in parsed_list:
+                v = p.get(col["key"], "")
+                try:
+                    total += float(v)
+                    has_num = True
+                except (ValueError, TypeError):
+                    pass
+            if has_num:
+                cell = ws.cell(row=total_row, column=cidx, value=round(total, 2))
+                cell.number_format = "#,##0.00"
+                cell.font = Font(name="Consolas", bold=True)
+                cell.fill = header_fill
+            else:
+                ws.cell(row=total_row, column=cidx, value="").fill = header_fill
+        ws.cell(row=total_row, column=2, value="").fill = header_fill  # 年月列留空
+        ws.cell(row=total_row, column=1).fill = header_fill
+        ws.cell(row=total_row, column=len(headers), value="").fill = header_fill
+
+    # 列宽
+    ws.column_dimensions["A"].width = 32
+    ws.column_dimensions["B"].width = 14
+    for ci in range(3, 3 + len(tf_columns)):
+        ws.column_dimensions[ws.cell(row=head_row, column=ci).column_letter].width = 22
+    ws.column_dimensions[ws.cell(row=head_row, column=len(headers)).column_letter].width = 36
+
+    # ===== Sheet 2: 验证明细 =====
+    ws2 = wb.create_sheet("验证明细")
+    ws2["A1"] = "各附件验证明细"
+    ws2["A1"].font = title_font
+    ws2.merge_cells("A1:E1")
+    ws2["A1"].alignment = center
+
+    detail_headers = ["附件名", "校验项", "类型", "结果", "说明"]
+    for cidx, h in enumerate(detail_headers, start=1):
+        c = ws2.cell(row=3, column=cidx, value=h)
+        c.font = header_font
+        c.fill = header_fill
+        c.alignment = center
+
+    kind_label = {
+        "column_sum": "纵向加总",
+        "row_formula_summary": "横向公式",
+        "row_formula_rows": "横向公式",
+    }
+    cur = 4
+    for p in parsed_list:
+        fn = p.get("filename", "")
+        vr = validation_results.get(fn)
+        if vr is None:
+            ws2.cell(row=cur, column=1, value=fn)
+            ws2.cell(row=cur, column=2, value="(未启用校验)").fill = header_fill
+            cur += 1
+            continue
+        for ck in vr.get("checks", []):
+            ws2.cell(row=cur, column=1, value=fn)
+            ws2.cell(row=cur, column=2, value=ck.get("name", ""))
+            ws2.cell(row=cur, column=3, value=kind_label.get(ck.get("kind"), ck.get("kind", "")))
+            ws2.cell(row=cur, column=4, value="✅ 通过" if ck.get("passed") else "❌ 失败")
+            ws2.cell(row=cur, column=5, value=ck.get("detail", ""))
+            fill = pass_fill if ck.get("passed") else fail_fill
+            for cidx in range(1, 6):
+                ws2.cell(row=cur, column=cidx).fill = fill
+            cur += 1
+
+    ws2.column_dimensions["A"].width = 32
+    ws2.column_dimensions["B"].width = 38
+    ws2.column_dimensions["C"].width = 12
+    ws2.column_dimensions["D"].width = 10
+    ws2.column_dimensions["E"].width = 60
+
+    out = BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
 def generate_title(unit_names, year_month, amounts):
     """
     unit_names: list of unit names (ordered by amount desc)
@@ -1008,13 +1168,42 @@ def main():
         preview_data.append(row)
     st.dataframe(preview_data)
 
+    # 生成「工资发放汇总表」xlsx：把数据预览 + 所有附件的验证明细打包成一个文件
+    # 用途：(1) .xls 附件无法回写验证 sheet，靠这里集中展示；
+    #      (2) 多附件场景下提供全局视图；(3) 作为额外附件随审批一起归档
+    summary_year_month = ""
+    for p in parsed_list:
+        if p.get("year_month"):
+            summary_year_month = p["year_month"]
+            break
+    summary_filename = (
+        f"工资发放汇总表_{summary_year_month}.xlsx"
+        if summary_year_month else "工资发放汇总表.xlsx"
+    )
+    try:
+        summary_bytes = build_summary_workbook(
+            parsed_list,
+            validation_results,
+            tf_columns,
+            write_back_sheet_name=val_cfg.get("write_back_sheet_name", "验证结果"),
+        )
+        st.download_button(
+            label=f"📥 下载汇总表（{summary_filename}）",
+            data=summary_bytes,
+            file_name=summary_filename,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except Exception as e:
+        summary_bytes = None
+        st.warning(f"⚠️ 生成汇总表失败：{e}")
+
     # 提示：若有失败，告诉用户去看 Excel sheet
     if val_cfg.get("enabled") and any(
         vr is not None and not vr["ok"] for vr in validation_results.values()
     ):
         st.info(
-            f"📋 详细校验明细已写入附件的「{val_cfg.get('write_back_sheet_name', '验证结果')}」sheet，"
-            f"审批人可在钉钉打开附件查看。"
+            f"📋 详细校验明细已写入附件的「{val_cfg.get('write_back_sheet_name', '验证结果')}」sheet（仅 .xlsx 附件），"
+            f"或参见上方汇总表的「验证明细」sheet。"
         )
 
     # Generate title
@@ -1044,6 +1233,9 @@ def main():
 
             # Upload each file to DingTalk
             attachments = []
+            # 总步数 = 每个原附件 + 汇总表（如果生成成功） + 创建审批实例
+            total_steps = len(uploaded_files) + (1 if summary_bytes else 0) + 1
+            done_steps = 0
             for i, upfile in enumerate(uploaded_files):
                 status_text.text(f"正在上传：{upfile.name} ...")
                 file_bytes = upfile.read()
@@ -1068,7 +1260,19 @@ def main():
                     file_bytes, upfile.name, union_id, space_id
                 )
                 attachments.append(result)
-                progress_bar.progress((i + 1) / (len(uploaded_files) + 1))
+                done_steps += 1
+                progress_bar.progress(done_steps / total_steps)
+
+            # 把汇总表也作为额外附件上传（如果生成成功）
+            if summary_bytes:
+                status_text.text(f"正在上传：{summary_filename} ...")
+                space_id = client.authorize_upload(user_id)
+                result = client.upload_file(
+                    summary_bytes, summary_filename, union_id, space_id
+                )
+                attachments.append(result)
+                done_steps += 1
+                progress_bar.progress(done_steps / total_steps)
 
             # Build table rows
             table_rows = []
