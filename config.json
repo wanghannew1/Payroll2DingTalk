@@ -40,6 +40,10 @@
       "adjustment": {
         "keywords": ["个人其他调整"],
         "label": "个人其他调整"
+      },
+      "personal_debt": {
+        "keywords": ["个人欠款"],
+        "label": "个人欠款"
       }
     }
   },
@@ -58,9 +62,9 @@
     ],
     "row_formulas": [
       {
-        "name": "转账合计 = 扣款合计 + 个人所得税 + 个人其他调整 + 实发合计",
+        "name": "转账合计 = 扣款合计 + 个人所得税 + 个人其他调整 + 个人欠款 + 实发合计",
         "lhs": "transfer_total",
-        "rhs_plus": ["deduction_total", "personal_tax", "adjustment", "net_total"],
+        "rhs_plus": ["deduction_total", "personal_tax", "adjustment", "personal_debt", "net_total"],
         "rhs_minus": []
       }
     ]
@@ -72,8 +76,9 @@
       {"key": "transfer_total", "label": "转账合计（元）"},
       {"key": "deduction_total", "label": "扣款合计（五险一金、单位代理费）"},
       {"key": "personal_tax", "label": "个人所得税合计"},
-      {"key": "adjustment", "label": "其他调整合计"},
-      {"key": "net_total", "label": "实发合计（元）"}
+        {"key": "adjustment", "label": "其他调整合计"},
+        {"key": "personal_debt", "label": "个人欠款"},
+        {"key": "net_total", "label": "实发合计（元）"}
     ]
   },
   "ui": {

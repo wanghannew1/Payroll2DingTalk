@@ -61,6 +61,10 @@ DEFAULT_CONFIG = {
                 "keywords": ["调差", "差额调整", "调整差额", "工伤差额", "返还差额"],
                 "label": "调差"
             },
+            "personal_debt": {
+                "keywords": ["个人欠款"],
+                "label": "个人欠款"
+            },
             "service_fee": {
                 "keywords": ["服务费", "代理费", "管理费"],
                 "label": "服务费"
@@ -86,8 +90,10 @@ DEFAULT_CONFIG = {
             {"key": "unit_name", "label": "甲方单位项目名称"},
             {"key": "transfer_total", "label": "转账合计（元）"},
             {"key": "deduction_total", "label": "扣款合计（五险一金、单位代理费）"},
-            {"key": "net_total", "label": "实发合计（元）"},
-            {"key": "tax_and_others", "label": "个人所得税及其他"}
+            {"key": "personal_tax", "label": "个人所得税合计"},
+            {"key": "adjustment", "label": "其他调整合计"},
+            {"key": "personal_debt", "label": "个人欠款"},
+            {"key": "net_total", "label": "实发合计（元）"}
         ]
     },
     "ui": {
@@ -576,9 +582,11 @@ def parse_excel(file_bytes, filename):
     for col_key, cidx in column_indices.items():
         column_summary_values[col_key] = get_val(cidx)
 
-    # tax_and_others 保留向后兼容（旧 config 可能还在用）
     try:
         tax_val = float(transfer_total) - float(deduction_total) - float(net_total)
+        for key in ["personal_tax", "personal_debt", "adjustment"]:
+            if key in column_summary_values:
+                tax_val -= float(column_summary_values[key])
         if abs(tax_val) < 0.005:
             tax_val = 0.0
         tax_and_others = f"{tax_val:.2f}"
