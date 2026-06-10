@@ -65,6 +65,14 @@ DEFAULT_CONFIG = {
                 "keywords": ["个人欠款"],
                 "label": "个人欠款"
             },
+            "personal_proxy_fee": {
+                "keywords": ["个人承担代理费"],
+                "label": "个人承担代理费"
+            },
+            "union_fee": {
+                "keywords": ["扣工会会费", "工会会费"],
+                "label": "扣工会会费"
+            },
             "service_fee": {
                 "keywords": ["服务费", "代理费", "管理费"],
                 "label": "服务费"
@@ -93,6 +101,8 @@ DEFAULT_CONFIG = {
             {"key": "personal_tax", "label": "个人所得税合计"},
             {"key": "adjustment", "label": "其他调整合计"},
             {"key": "personal_debt", "label": "个人欠款"},
+            {"key": "personal_proxy_fee", "label": "个人承担代理费"},
+            {"key": "union_fee", "label": "扣工会会费"},
             {"key": "net_total", "label": "实发合计（元）"}
         ]
     },
@@ -584,7 +594,7 @@ def parse_excel(file_bytes, filename):
 
     try:
         tax_val = float(transfer_total) - float(deduction_total) - float(net_total)
-        for key in ["personal_tax", "personal_debt", "adjustment"]:
+        for key in ["personal_tax", "personal_debt", "adjustment", "personal_proxy_fee", "union_fee"]:
             if key in column_summary_values:
                 tax_val -= float(column_summary_values[key])
         if abs(tax_val) < 0.005:

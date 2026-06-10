@@ -44,6 +44,14 @@
       "personal_debt": {
         "keywords": ["个人欠款"],
         "label": "个人欠款"
+      },
+      "personal_proxy_fee": {
+        "keywords": ["个人承担代理费"],
+        "label": "个人承担代理费"
+      },
+      "union_fee": {
+        "keywords": ["扣工会会费", "工会会费"],
+        "label": "扣工会会费"
       }
     }
   },
@@ -78,6 +86,8 @@
       {"key": "personal_tax", "label": "个人所得税合计"},
         {"key": "adjustment", "label": "其他调整合计"},
         {"key": "personal_debt", "label": "个人欠款"},
+        {"key": "personal_proxy_fee", "label": "个人承担代理费"},
+        {"key": "union_fee", "label": "扣工会会费"},
         {"key": "net_total", "label": "实发合计（元）"}
     ]
   },
