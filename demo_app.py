@@ -802,6 +802,44 @@ def validate_payroll(parsed, validation_cfg, excel_cols):
     }
 
 
+def check_signatures(file_bytes, filename, required_keywords):
+    """
+    Scan all cells in an Excel file for required signature keywords.
+    Returns {"ok": bool, "found": [...], "missing": [...]}
+
+    Matching is case-insensitive substring — "总经理签字：" or "总经理签字" both match.
+    """
+    filename_lower = filename.lower()
+    if filename_lower.endswith('.xls') and not filename_lower.endswith('.xlsx'):
+        import xlrd
+        wb = xlrd.open_workbook(file_contents=file_bytes)
+        ws = wb.sheet_by_index(0)
+        all_text = " ".join(
+            str(ws.cell_value(r, c)) for r in range(ws.nrows) for c in range(ws.ncols)
+        )
+    else:
+        wb = openpyxl.load_workbook(BytesIO(file_bytes), data_only=True)
+        ws = wb.active
+        all_text = " ".join(
+            str(cell.value or "") for row in ws.iter_rows() for cell in row
+        )
+
+    all_text_lower = all_text.lower()
+    found = []
+    missing = []
+    for kw in required_keywords:
+        if kw.lower() in all_text_lower:
+            found.append(kw)
+        else:
+            missing.append(kw)
+
+    return {
+        "ok": len(missing) == 0,
+        "found": found,
+        "missing": missing,
+    }
+
+
 def append_validation_sheet(file_bytes, validation_result,
                             sheet_name="验证结果",
                             source_filename=""):
@@ -1150,8 +1188,23 @@ def main():
 
     # 工资表内容校验
     val_cfg = CONFIG.get("validation", DEFAULT_CONFIG["validation"])
+    required_sigs = val_cfg.get("required_signatures", [])
     validation_results = {}  # {filename: validation_result}
     submit_blocked = False
+    signature_check_blocked = False
+
+    if required_sigs:
+        for upfile in uploaded_files:
+            file_bytes = upfile.read()
+            upfile.seek(0)
+            result = check_signatures(file_bytes, upfile.name, required_sigs)
+            if not result["ok"]:
+                signature_check_blocked = True
+                missing_list = "、".join(result["missing"])
+                st.error(
+                    f"⚠️ {upfile.name}：缺少签名栏信息 — {missing_list}。"
+                    f"请确保 Excel 文件中包含这些字段后再上传。"
+                )
     if val_cfg.get("enabled"):
         excel_cols_def = CONFIG.get("excel", {}).get("columns", {})
         for p in parsed_list:
@@ -1238,9 +1291,10 @@ def main():
     st.text_input("审批标题（自动生成）", value=title, disabled=True)
 
     # Submit button
+    final_blocked = submit_blocked or signature_check_blocked
     if submit_blocked:
         st.error("⚠️ 校验未通过且当前为严格模式，请修改 Excel 后重新上传")
-    if st.button("提交审批", disabled=submit_blocked):
+    if st.button("提交审批", disabled=final_blocked):
         progress_bar = st.progress(0)
         status_text = st.empty()
 

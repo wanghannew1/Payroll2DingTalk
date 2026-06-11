@@ -75,7 +75,8 @@
         "rhs_plus": ["deduction_total", "personal_tax", "adjustment", "personal_debt", "personal_proxy_fee", "union_fee", "net_total"],
         "rhs_minus": []
       }
-    ]
+    ],
+    "required_signatures": ["总经理签字", "部长签字", "财务审核", "业务审核"]
   },
   "table_field": {
     "columns": [
