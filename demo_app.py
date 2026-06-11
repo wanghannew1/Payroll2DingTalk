@@ -802,13 +802,21 @@ def validate_payroll(parsed, validation_cfg, excel_cols):
     }
 
 
-def check_signatures(file_bytes, filename, required_keywords):
+def check_signatures(file_bytes, filename, required_sigs):
     """
     Scan all cells in an Excel file for required signature keywords.
-    Returns {"ok": bool, "found": [...], "missing": [...]}
 
-    Matching is case-insensitive substring — "总经理签字：" or "总经理签字" both match.
+    required_sigs 支持两种格式：
+      - 扁平列表 ["A", "B", "C"] → 全部必须存在（向后兼容）
+      - 分组列表 [["A","B","C","D"], ["A","B","C"]] → 任一组全部匹配即通过
+
+    Returns {"ok": bool, "found": [...], "missing": [...]}
     """
+    if required_sigs and isinstance(required_sigs[0], list):
+        groups = required_sigs
+    else:
+        groups = [required_sigs] if required_sigs else []
+
     filename_lower = filename.lower()
     if filename_lower.endswith('.xls') and not filename_lower.endswith('.xlsx'):
         import xlrd
@@ -825,19 +833,16 @@ def check_signatures(file_bytes, filename, required_keywords):
         )
 
     all_text_lower = all_text.lower()
-    found = []
-    missing = []
-    for kw in required_keywords:
-        if kw.lower() in all_text_lower:
-            found.append(kw)
-        else:
-            missing.append(kw)
 
-    return {
-        "ok": len(missing) == 0,
-        "found": found,
-        "missing": missing,
-    }
+    for group in groups:
+        missing_in_group = [kw for kw in group if kw.lower() not in all_text_lower]
+        if not missing_in_group:
+            return {"ok": True, "found": group, "missing": []}
+
+    best = min(groups, key=lambda g: sum(1 for kw in g if kw.lower() not in all_text_lower))
+    found = [kw for kw in best if kw.lower() in all_text_lower]
+    missing = [kw for kw in best if kw.lower() not in all_text_lower]
+    return {"ok": False, "found": found, "missing": missing}
 
 
 def append_validation_sheet(file_bytes, validation_result,
@@ -922,7 +927,9 @@ def append_validation_sheet(file_bytes, validation_result,
 
 
 def build_summary_workbook(parsed_list, validation_results, tf_columns,
-                           write_back_sheet_name="验证结果"):
+                           write_back_sheet_name="验证结果",
+                           signature_results=None,
+                           required_signatures=None):
     """
     生成「工资发放汇总表」xlsx，包含两个 sheet：
       1) 汇总数据：每行一个附件，列同数据预览（文件名、年月、报表字段...、验证结果）
@@ -985,15 +992,35 @@ def build_summary_workbook(parsed_list, validation_results, tf_columns,
                 ws.cell(row=i, column=cidx, value=v)
         # 验证结果列
         vr = validation_results.get(p.get("filename"))
+        sr = (signature_results or {}).get(p.get("filename"))
+        status_parts = []
+        fill = None
+
+        if sr is not None:
+            if sr["ok"]:
+                status_parts.append("✅ 签名栏齐全")
+            else:
+                missing = "、".join(sr["missing"])
+                status_parts.append(f"❌ 缺少签名栏: {missing}")
+                fill = fail_fill
+
         if vr is None:
-            status = "未启用"
-            fill = None
+            if not status_parts:
+                status = "未启用"
+                fill = None
+            else:
+                status = " | ".join(status_parts)
         elif vr["ok"]:
-            status = f"✅ 全部通过 ({vr['passed_count']} 项)"
-            fill = pass_fill
+            status_parts.append(f"✅ 数值校验全部通过 ({vr['passed_count']} 项)")
+            if fill is None:
+                fill = pass_fill
+            status = " | ".join(status_parts)
         else:
-            status = f"⚠️ {vr['failed_count']} 项未通过 (共 {vr['passed_count']+vr['failed_count']} 项)"
+            status_parts.append(f"⚠️ {vr['failed_count']} 项未通过 (共 {vr['passed_count']+vr['failed_count']} 项)")
             fill = fail_fill
+            status = " | ".join(status_parts)
+        if not status_parts and vr is None and sr is None:
+            status = "未启用"
         status_cell = ws.cell(row=i, column=len(headers), value=status)
         if fill is not None:
             status_cell.fill = fill
@@ -1049,11 +1076,34 @@ def build_summary_workbook(parsed_list, validation_results, tf_columns,
         "column_sum": "纵向加总",
         "row_formula_summary": "横向公式",
         "row_formula_rows": "横向公式",
+        "signature_check": "签名栏",
     }
     cur = 4
     for p in parsed_list:
         fn = p.get("filename", "")
         vr = validation_results.get(fn)
+        sr = (signature_results or {}).get(fn)
+
+        # 签名栏检查行（放在最前面，最重要）
+        if sr is not None:
+            ws2.cell(row=cur, column=1, value=fn)
+            ws2.cell(row=cur, column=2, value="签名栏检查")
+            ws2.cell(row=cur, column=3, value=kind_label["signature_check"])
+            if sr["ok"]:
+                ws2.cell(row=cur, column=4, value="✅ 通过")
+                ws2.cell(row=cur, column=5, value=f"已找到: {'、'.join(sr['found'])}")
+                fill = pass_fill
+            else:
+                ws2.cell(row=cur, column=4, value="❌ 失败")
+                detail = f"缺少: {'、'.join(sr['missing'])}"
+                if sr["found"]:
+                    detail += f"；已找到: {'、'.join(sr['found'])}"
+                ws2.cell(row=cur, column=5, value=detail)
+                fill = fail_fill
+            for cidx in range(1, 6):
+                ws2.cell(row=cur, column=cidx).fill = fill
+            cur += 1
+
         if vr is None:
             ws2.cell(row=cur, column=1, value=fn)
             ws2.cell(row=cur, column=2, value="(未启用校验)").fill = header_fill
@@ -1190,6 +1240,7 @@ def main():
     val_cfg = CONFIG.get("validation", DEFAULT_CONFIG["validation"])
     required_sigs = val_cfg.get("required_signatures", [])
     validation_results = {}  # {filename: validation_result}
+    signature_results = {}   # {filename: signature_check_result}
     submit_blocked = False
     signature_check_blocked = False
 
@@ -1198,6 +1249,7 @@ def main():
             file_bytes = upfile.read()
             upfile.seek(0)
             result = check_signatures(file_bytes, upfile.name, required_sigs)
+            signature_results[upfile.name] = result
             if not result["ok"]:
                 signature_check_blocked = True
                 missing_list = "、".join(result["missing"])
@@ -1227,15 +1279,26 @@ def main():
         row = {"文件名": p["filename"], "年月": p["year_month"]}
         for col in tf_columns:
             row[col["label"]] = p[col["key"]]
-        # 验证结果列
+        sig_parts = []
+
+        sr = signature_results.get(p["filename"])
+        if sr is not None:
+            if sr["ok"]:
+                sig_parts.append("✅ 签名栏齐全")
+            else:
+                sig_parts.append(f"❌ 缺少签名栏: {'、'.join(sr['missing'])}")
+
         if val_cfg.get("enabled"):
             vr = validation_results.get(p["filename"])
             if vr is None:
-                row["验证结果"] = "⚠️ 配置错误"
+                sig_parts.append("⚠️ 配置错误")
             elif vr["ok"]:
-                row["验证结果"] = f"✅ 全部通过 ({vr['passed_count']} 项)"
+                sig_parts.append(f"✅ 数值全部通过 ({vr['passed_count']} 项)")
             else:
-                row["验证结果"] = f"⚠️ {vr['failed_count']}/{vr['passed_count'] + vr['failed_count']} 项未通过"
+                sig_parts.append(f"⚠️ {vr['failed_count']}/{vr['passed_count'] + vr['failed_count']} 项未通过")
+
+        if sig_parts:
+            row["验证结果"] = " | ".join(sig_parts)
         preview_data.append(row)
     st.dataframe(preview_data)
 
@@ -1267,6 +1330,8 @@ def main():
             validation_results,
             tf_columns,
             write_back_sheet_name=val_cfg.get("write_back_sheet_name", "验证结果"),
+            signature_results=signature_results,
+            required_signatures=required_sigs,
         )
         st.download_button(
             label=f"📥 下载汇总表（{summary_filename}）",
