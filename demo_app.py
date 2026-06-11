@@ -834,14 +834,20 @@ def check_signatures(file_bytes, filename, required_sigs):
 
     all_text_lower = all_text.lower()
 
+    def kw_matches(kw):
+        return any(
+            alias.strip().lower() in all_text_lower
+            for alias in kw.split("|")
+        )
+
     for group in groups:
-        missing_in_group = [kw for kw in group if kw.lower() not in all_text_lower]
+        missing_in_group = [kw for kw in group if not kw_matches(kw)]
         if not missing_in_group:
             return {"ok": True, "found": group, "missing": []}
 
-    best = min(groups, key=lambda g: sum(1 for kw in g if kw.lower() not in all_text_lower))
-    found = [kw for kw in best if kw.lower() in all_text_lower]
-    missing = [kw for kw in best if kw.lower() not in all_text_lower]
+    best = min(groups, key=lambda g: sum(1 for kw in g if not kw_matches(kw)))
+    found = [kw for kw in best if kw_matches(kw)]
+    missing = [kw for kw in best if not kw_matches(kw)]
     return {"ok": False, "found": found, "missing": missing}
 
 
